@@ -1,4 +1,3 @@
-\
 import torch
 import numpy as np
 from models import ActorCritic
@@ -33,9 +32,10 @@ class PPOAgent:
         """Stores a transition in the memory buffer."""
         self.memory.store_memory(state, action, log_prob, reward, value, done)
 
-    def learn(self):
+    def learn(self, next_value, last_done): # Add parameters
         """Triggers the PPO update step."""
-        self.ppo_algorithm.update(self.memory)
+        # Pass next_value and last_done for GAE calculation
+        self.ppo_algorithm.update(self.memory, next_value, last_done)
         self.memory.clear_memory() # Clear memory after update
 
     def save_model(self, path):

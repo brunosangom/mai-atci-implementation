@@ -9,9 +9,10 @@ class PPOAlgorithm:
         self.actor_critic = actor_critic_model
         self.optimizer = optim.Adam(self.actor_critic.parameters(), lr=learning_rate)
 
-    def update(self, memory):
+    def update(self, memory, next_value, last_done): # Add parameters
         """Performs PPO update."""
-        states, actions, old_log_probs, old_values, advantages, returns, batches = memory.generate_batches()
+        # Generate batches using memory, providing bootstrap info
+        states, actions, old_log_probs, old_values, advantages, returns, batches = memory.generate_batches(next_value, last_done)
 
         for _ in range(config.PPO_EPOCHS):
             for batch_indices in batches:

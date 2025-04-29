@@ -1,4 +1,3 @@
-\
 import gymnasium as gym
 import numpy as np
 import torch
@@ -49,9 +48,20 @@ def train():
                 if done or truncated:
                     break # End inner loop if episode finishes before PPO_STEPS
 
-            # Only learn if enough steps were collected (might not be PPO_STEPS if episode ended early)
+            # Calculate the value of the state after the last step for GAE bootstrap
+            next_value = 0.0 # Default to 0 if the episode ended
+            last_done_or_truncated = done or truncated
+            if not last_done_or_truncated:
+                # If the episode didn't end, estimate value of the final next_state
+                state_tensor = torch.tensor(np.array([state]), dtype=torch.float).to(config.DEVICE)
+                with torch.no_grad():
+                    # Get value from critic head
+                    shared_features = agent.actor_critic.shared_layer(state_tensor)
+                    next_value = agent.actor_critic.critic_head(shared_features).cpu().numpy().item()
+
+            # Only learn if enough steps were collected
             if len(agent.memory) > 0:
-                 agent.learn()
+                 agent.learn(next_value, last_done_or_truncated) # Pass bootstrap info
 
             if done or truncated:
                  break # Break outer loop as well
