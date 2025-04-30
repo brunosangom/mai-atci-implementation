@@ -20,8 +20,10 @@ NUM_ACTORS = 2 # Number of parallel actors (environments) to collect samples fro
 MINI_BATCH_SIZE = 64 # Size of mini-batches for update
 PPO_EPOCHS = 10 # Number of epochs to update the policy per learning cycle
 
-NUM_STEPS = 50000 # Total number of steps to train the agent
+GOAL_REWARD = 475.0 # Reward threshold for CartPole-v1
+NUM_STEPS = 20000 # Total number of steps to train the agent
 EVAL_EPISODES = 20 # Average over this many episodes for evaluation
+TEST_EPISODES = 25 # Number of episodes to test the agent after training
 
 RENDER = True # Whether to render episodes after training
 
@@ -41,5 +43,6 @@ CONFIG = {
     'PPO_EPOCHS': PPO_EPOCHS,
     'NUM_STEPS': NUM_STEPS,
     'EVAL_EPISODES': EVAL_EPISODES,
+    'TEST_EPISODES': TEST_EPISODES,
     'RENDER': RENDER,
 }

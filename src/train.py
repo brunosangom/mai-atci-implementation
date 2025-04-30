@@ -29,6 +29,36 @@ def evaluate_agent(env_name, agent, eval_episodes, device):
     env.close()
     return np.mean(total_rewards)
 
+def generate_renders(env_name, agent, num_renders, save_dir, device):
+    """Generates video renders of the agent playing."""
+    print(f"Generating {num_renders} renders in {save_dir}...")
+    # os.makedirs(save_dir, exist_ok=True)
+    # Create a temporary env with video recording
+    render_env = gym.make(env_name, render_mode="rgb_array")
+    # The RecordVideo wrapper needs the directory to exist
+    record_env = gym.wrappers.RecordVideo(render_env, video_folder=save_dir, episode_trigger=lambda x: True, name_prefix="render")
+
+    for i in range(num_renders):
+        state, _ = record_env.reset()
+        done = False
+        episode_reward = 0
+        while not done:
+            state_tensor = torch.tensor(np.array([state]), dtype=torch.float).to(device)
+            with torch.no_grad():
+                action_logits, _ = agent.actor_critic(state_tensor)
+                action = torch.argmax(action_logits, dim=-1).item() # Deterministic action
+
+            next_state, reward, terminated, truncated, _ = record_env.step(action)
+            done = terminated or truncated
+            episode_reward += reward
+            state = next_state
+        print(f"  Render {i+1}/{num_renders} finished. Reward: {episode_reward:.2f}")
+
+    record_env.close() # This saves the videos
+    render_env.close() # Close the base env
+    print("Renders generated.")
+
+
 def train_agent(cfg):
     """Trains the PPO agent."""
     print(f"Using device: {cfg['DEVICE']}")
@@ -46,7 +76,7 @@ def train_agent(cfg):
 
     # Create directories for saving models
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    model_dir = os.path.join("..", "ppo_models", f"ppo_{cfg['ENV_NAME']}_{timestamp}")
+    model_dir = os.path.join("ppo_models", f"ppo_{cfg['ENV_NAME']}_{timestamp}")
     os.makedirs(model_dir, exist_ok=True)
     print(f"Models will be saved in: {model_dir}")
 
@@ -97,21 +127,38 @@ def train_agent(cfg):
             print(f"Evaluation after {total_steps} steps: Average Reward = {avg_eval_reward:.2f}")
 
             # Save the model if it's the best so far
-            if avg_eval_reward > best_eval_reward:
+            if avg_eval_reward > best_eval_reward and total_steps >= cfg['NUM_STEPS'] * 0.3:
                 best_eval_reward = avg_eval_reward
                 save_path = os.path.join(model_dir, f"ppo_{cfg['ENV_NAME']}_{timestamp}.pth")
                 agent.save_model(save_path)
-                print(f"New best model saved with reward {best_eval_reward:.2f}")
+                print(f"New best model saved with reward {best_eval_reward:.2f} at {save_path}")
+
+                # Generate renders if requested
+                if cfg.get('RENDER', False):
+                    render_save_dir = os.path.join(model_dir, "renders", f"{avg_eval_reward:.2f}")
+                    generate_renders(cfg['ENV_NAME'], agent, 3, render_save_dir, cfg['DEVICE'])
+            
+            if best_eval_reward >= cfg['GOAL_REWARD']:
+                print(f"Goal reward of {cfg['GOAL_REWARD']} reached! Stopping training.")
+                break
 
 
     # --- Final Evaluation & Saving ---
     print("\nTraining finished.")
-    final_avg_reward = evaluate_agent(cfg['ENV_NAME'], agent, cfg['EVAL_EPISODES'], cfg['DEVICE'])
-    print(f"Final Evaluation: Average Reward = {final_avg_reward:.2f}")
+    # Load the best model for final evaluation
+    best_model_path = os.path.join(model_dir, f"ppo_{cfg['ENV_NAME']}_{timestamp}.pth")
+    if os.path.exists(best_model_path):
+        print(f"Loading best model from {best_model_path} for final evaluation.")
 
-    # Save the final model
-    final_save_path = os.path.join(model_dir, f"final_ppo_{cfg['ENV_NAME']}_{timestamp}.pth")
-    agent.save_model(final_save_path)
+        best_agent = PPOAgent(state_dim, action_dim, cfg)
+        best_agent.load_model(best_model_path)
+        final_avg_reward = evaluate_agent(cfg['ENV_NAME'], best_agent, cfg['TEST_EPISODES'], cfg['DEVICE'])
+        print(f"Final Evaluation (Best Model): Average Reward = {final_avg_reward:.2f}")
+    else:
+        print("No best model was saved during training. Evaluating current agent state.")
+        final_avg_reward = evaluate_agent(cfg['ENV_NAME'], agent, cfg['TEST_EPISODES'], cfg['DEVICE'])
+        print(f"Final Evaluation (Current Agent): Average Reward = {final_avg_reward:.2f}")
+
 
     env.close()
     print("Training complete.")
