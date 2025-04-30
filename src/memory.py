@@ -1,10 +1,10 @@
 import numpy as np
 import torch
-import config
 
 class PPOMemory:
     """Stores transitions for PPO updates."""
-    def __init__(self, batch_size):
+    # Accept cfg dictionary
+    def __init__(self, batch_size, cfg):
         self.states = []
         self.actions = []
         self.log_probs = []
@@ -12,6 +12,7 @@ class PPOMemory:
         self.values = []
         self.dones = []
         self.batch_size = batch_size
+        self.cfg = cfg # Store config
 
     def store_memory(self, state, action, log_prob, reward, value, done):
         self.states.append(state)
@@ -29,6 +30,7 @@ class PPOMemory:
         self.values = []
         self.dones = []
 
+    # Use cfg for device and GAE params
     def generate_batches(self, next_value, last_done): # Add parameters
         """Generates batches for PPO training."""
         n_states = len(self.states)
@@ -37,64 +39,67 @@ class PPOMemory:
         np.random.shuffle(indices)
         batches = [indices[i:i+self.batch_size] for i in batch_start]
 
-        # Convert lists to tensors before batching - Use np.array first for efficiency
-        states_np = np.array(self.states)
-        if states_np.ndim == 1:
-             states_np = np.stack(states_np)
+        # Convert lists to tensors before batching - Use np.vstack for states
+        try:
+            # Use vstack for potentially mixed shapes (e.g., during collection)
+            # Ensure states are consistently shaped before vstack if necessary
+            states_np = np.vstack(self.states).astype(np.float32)
+        except ValueError as e:
+            print(f"Error stacking states: {e}")
+            # Potentially add debugging: print shapes of self.states elements
+            # for i, s in enumerate(self.states):
+            #     print(f"State {i} shape: {np.array(s).shape}")
+            raise e
 
-        states_tensor = torch.tensor(states_np, dtype=torch.float).to(config.DEVICE)
-        actions_tensor = torch.tensor(np.array(self.actions), dtype=torch.long).to(config.DEVICE)
-        log_probs_tensor = torch.tensor(np.array(self.log_probs), dtype=torch.float).to(config.DEVICE)
-        values_tensor = torch.tensor(np.array(self.values), dtype=torch.float).to(config.DEVICE)
-        rewards_tensor = torch.tensor(np.array(self.rewards), dtype=torch.float).to(config.DEVICE)
-        dones_tensor = torch.tensor(np.array(self.dones), dtype=torch.bool).to(config.DEVICE)
+        states_tensor = torch.tensor(states_np, dtype=torch.float).to(self.cfg['DEVICE'])
+        # Convert other lists directly to numpy arrays before tensor conversion
+        actions_tensor = torch.tensor(np.array(self.actions), dtype=torch.long).to(self.cfg['DEVICE'])
+        log_probs_tensor = torch.tensor(np.array(self.log_probs), dtype=torch.float).to(self.cfg['DEVICE'])
+        values_tensor = torch.tensor(np.array(self.values), dtype=torch.float).to(self.cfg['DEVICE'])
+        rewards_tensor = torch.tensor(np.array(self.rewards), dtype=torch.float).to(self.cfg['DEVICE'])
+        dones_tensor = torch.tensor(np.array(self.dones), dtype=torch.bool).to(self.cfg['DEVICE'])
 
 
         # Calculate advantages and returns using GAE, passing bootstrap info
         advantages, returns = self._calculate_gae(rewards_tensor, values_tensor, dones_tensor, next_value, last_done)
 
         # Normalize advantages
-        adv_std = advantages.std()
-        if adv_std > 1e-8: # Avoid division by zero or near-zero
-            advantages = (advantages - advantages.mean()) / (adv_std + 1e-8)
-        else:
-            # If std is zero, advantages are constant. If mean is also 0, they are all 0.
-            # If mean is non-zero, normalization is tricky. Setting to 0 is a common heuristic.
-            advantages = (advantages - advantages.mean()) # Center advantages if std is zero
-            # Alternatively, could set advantages to zero: advantages = torch.zeros_like(advantages)
-
+        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8) # Add epsilon for stability
 
         return (states_tensor, actions_tensor, log_probs_tensor,
                 values_tensor, advantages, returns, batches) # Return values_tensor (old values)
 
+    # Use cfg for device and GAE params
     def _calculate_gae(self, rewards, values, dones, next_value, last_done): # Add parameters
         """Calculates Generalized Advantage Estimation (GAE) and returns."""
         n_steps = len(rewards)
-        advantages = torch.zeros_like(rewards).to(config.DEVICE)
-        returns = torch.zeros_like(rewards).to(config.DEVICE)
+        advantages = torch.zeros_like(rewards).to(self.cfg['DEVICE'])
+        # returns = torch.zeros_like(rewards).to(self.cfg['DEVICE']) # Removed, calculated below
         last_advantage = 0.0
 
         # Use the provided next_value for bootstrap if the trajectory didn't end
-        # This is V(s_{T+1}) where T is the last step in the collected trajectory
-        bootstrap_value = torch.tensor(next_value, dtype=torch.float).to(config.DEVICE) * (1.0 - float(last_done))
+        # Ensure next_value is treated as a tensor
+        if not isinstance(next_value, torch.Tensor):
+            next_value_tensor = torch.tensor([next_value], dtype=torch.float).to(self.cfg['DEVICE'])
+        else:
+            next_value_tensor = next_value.to(self.cfg['DEVICE'])
+
+        last_value = next_value_tensor * (1.0 - float(last_done))
 
         # Calculate advantages and returns backwards
-        current_next_value = bootstrap_value # Start with V(s_{T+1})
+        # current_next_value = bootstrap_value # Start with V(s_{T+1})
         for t in reversed(range(n_steps)):
             mask = 1.0 - dones[t].float() # Mask for terminal states *within* the trajectory
             # TD Error (delta)
-            # delta = r_t + gamma * V(s_{t+1}) * mask - V(s_t)
-            # Note: mask here applies to dones[t], ensuring V(s_{t+1}) is zero if s_t was terminal
-            delta = rewards[t] + config.GAMMA * current_next_value * mask - values[t]
+            delta = rewards[t] + self.cfg['GAMMA'] * last_value * mask - values[t] # Use cfg['GAMMA']
             # GAE Advantage
-            # A(s_t, a_t) = delta_t + gamma * lambda * A(s_{t+1}, a_{t+1}) * mask
-            last_advantage = delta + config.GAMMA * config.GAE_LAMBDA * mask * last_advantage
+            last_advantage = delta + self.cfg['GAMMA'] * self.cfg['GAE_LAMBDA'] * mask * last_advantage # Use cfg params
             advantages[t] = last_advantage
-            # Return (target for value function) = GAE Advantage + V(s_t)
-            returns[t] = advantages[t] + values[t]
-            # Update next_value for the previous step (t-1) -> V(s_t) becomes the next_value for step t-1
-            current_next_value = values[t]
+            # Update last_value for the previous step (t-1)
+            last_value = values[t]
 
+        # Calculate returns = advantages + values
+        returns = advantages + values # Calculate returns based on final advantages
 
         return advantages, returns # Return both advantages and returns
 

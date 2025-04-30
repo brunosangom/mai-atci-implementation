@@ -16,12 +16,12 @@ class ActorCritic(nn.Module):
             nn.ReLU()
         )
 
-        # Actor head: outputs action probabilities
+        # Actor head: outputs action logits (raw scores)
         self.actor_head = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim, action_dim),
-            nn.Softmax(dim=-1) # Use Softmax for discrete action spaces
+            nn.Linear(hidden_dim, action_dim)
+            # REMOVED nn.Softmax(dim=-1) - Categorical distribution expects logits
         )
 
         # Critic head: outputs state value
@@ -37,13 +37,13 @@ class ActorCritic(nn.Module):
         Args:
             state: The input state.
         Returns:
-            action_probs: Probabilities over actions (from Actor).
+            action_logits: Logits over actions (from Actor).
             state_value: Estimated value of the state (from Critic).
         """
         shared_features = self.shared_layer(state)
-        action_probs = self.actor_head(shared_features)
+        action_logits = self.actor_head(shared_features)
         state_value = self.critic_head(shared_features)
-        return action_probs, state_value
+        return action_logits, state_value # Return logits
 
     def evaluate_actions(self, state, action):
         """
@@ -57,8 +57,8 @@ class ActorCritic(nn.Module):
             log_probs: Log probabilities of the actions taken.
             entropy: Policy entropy.
         """
-        action_probs, value = self.forward(state)
-        dist = Categorical(action_probs)
+        action_logits, value = self.forward(state)
+        dist = Categorical(logits=action_logits) # Use logits=...
         log_probs = dist.log_prob(action)
         entropy = dist.entropy().mean()
         return value, log_probs, entropy
@@ -72,9 +72,10 @@ class ActorCritic(nn.Module):
         Returns:
             action: The selected action.
             log_prob: The log probability of the selected action.
+            value: The estimated state value (added return)
         """
-        action_probs, _ = self.forward(state)
-        dist = Categorical(action_probs)
+        action_logits, value = self.forward(state)
+        dist = Categorical(logits=action_logits) # Use logits=...
         action = dist.sample()
         log_prob = dist.log_prob(action)
-        return action.item(), log_prob
+        return action.item(), log_prob, value # Return value as well

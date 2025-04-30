@@ -1,0 +1,118 @@
+import gymnasium as gym
+import torch
+import numpy as np
+import os
+from datetime import datetime
+from agent import PPOAgent
+# CONFIG is already imported in main.py and passed to train_agent
+
+def evaluate_agent(env_name, agent, eval_episodes, device):
+    """Evaluates the agent over a number of episodes."""
+    env = gym.make(env_name)
+    total_rewards = []
+    for _ in range(eval_episodes):
+        state, _ = env.reset()
+        done = False
+        episode_reward = 0
+        while not done:
+            state_tensor = torch.tensor(np.array([state]), dtype=torch.float).to(device)
+            with torch.no_grad():
+                # Only need action for evaluation, ignore log_prob and value
+                action_logits, _ = agent.actor_critic(state_tensor)
+                action = torch.argmax(action_logits, dim=-1).item() # Choose best action deterministically
+
+            next_state, reward, terminated, truncated, _ = env.step(action)
+            done = terminated or truncated
+            episode_reward += reward
+            state = next_state
+        total_rewards.append(episode_reward)
+    env.close()
+    return np.mean(total_rewards)
+
+def train_agent(cfg):
+    """Trains the PPO agent."""
+    print(f"Using device: {cfg['DEVICE']}")
+    print(f"Training on environment: {cfg['ENV_NAME']}")
+    print("Configuration:")
+    for key, value in cfg.items():
+        print(f"  {key}: {value}")
+
+    # --- Initialization ---
+    env = gym.make(cfg['ENV_NAME'])
+    state_dim = env.observation_space.shape[0]
+    action_dim = env.action_space.n
+
+    agent = PPOAgent(state_dim, action_dim, cfg)
+
+    # Create directories for saving models
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    model_dir = os.path.join("..", "ppo_models", f"ppo_{cfg['ENV_NAME']}_{timestamp}")
+    os.makedirs(model_dir, exist_ok=True)
+    print(f"Models will be saved in: {model_dir}")
+
+
+    total_steps = 0
+    episode = 0
+    best_eval_reward = -np.inf
+
+    # --- Training Loop ---
+    state, _ = env.reset()
+
+    while total_steps < cfg['NUM_STEPS']:
+        # --- Data Collection Phase ---
+        for step in range(cfg['PPO_STEPS']):
+            action, log_prob, value = agent.select_action(state)
+            next_state, reward, terminated, truncated, _ = env.step(action)
+            done = terminated or truncated
+
+            agent.store_transition(state, action, log_prob, reward, value, done)
+            state = next_state
+            total_steps += 1
+
+            if done:
+                episode += 1
+                state, _ = env.reset()
+
+            # Break if total steps reached during collection
+            if total_steps >= cfg['NUM_STEPS']:
+                break
+
+        # --- Learning Phase ---
+        # Bootstrap value estimation for the last state if not done
+        last_done = done
+        if not last_done:
+            state_tensor = torch.tensor(np.array([state]), dtype=torch.float).to(cfg['DEVICE'])
+            with torch.no_grad():
+                 _, next_value = agent.actor_critic(state_tensor)
+                 next_value = next_value.cpu().numpy().item() # Get scalar value
+        else:
+            next_value = 0.0 # Terminal state value is 0
+
+        agent.learn(next_value, last_done) # Pass bootstrap info
+
+        # --- Evaluation Phase ---
+        # Evaluate the agent periodically (e.g., after each learning cycle)
+        if episode > 0: # Start evaluating after at least one learning cycle
+            avg_eval_reward = evaluate_agent(cfg['ENV_NAME'], agent, cfg['EVAL_EPISODES'], cfg['DEVICE'])
+            print(f"Evaluation after {total_steps} steps: Average Reward = {avg_eval_reward:.2f}")
+
+            # Save the model if it's the best so far
+            if avg_eval_reward > best_eval_reward:
+                best_eval_reward = avg_eval_reward
+                save_path = os.path.join(model_dir, f"ppo_{cfg['ENV_NAME']}_{timestamp}.pth")
+                agent.save_model(save_path)
+                print(f"New best model saved with reward {best_eval_reward:.2f}")
+
+
+    # --- Final Evaluation & Saving ---
+    print("\nTraining finished.")
+    final_avg_reward = evaluate_agent(cfg['ENV_NAME'], agent, cfg['EVAL_EPISODES'], cfg['DEVICE'])
+    print(f"Final Evaluation: Average Reward = {final_avg_reward:.2f}")
+
+    # Save the final model
+    final_save_path = os.path.join(model_dir, f"final_ppo_{cfg['ENV_NAME']}_{timestamp}.pth")
+    agent.save_model(final_save_path)
+
+    env.close()
+    print("Training complete.")
+
