@@ -132,7 +132,7 @@ def train_agent(cfg):
             print(f"Evaluation after {total_steps} steps: Average Reward = {avg_eval_reward:.2f}")
 
             # Save the model if it's the best so far
-            if avg_eval_reward > best_eval_reward and total_steps >= cfg['NUM_STEPS'] * 0.3:
+            if avg_eval_reward > best_eval_reward and total_steps >= cfg['NUM_STEPS'] * 0.1:
                 best_eval_reward = avg_eval_reward
                 save_path = os.path.join(model_dir, f"ppo_{cfg['ENV_NAME']}_{timestamp}.pth")
                 agent.save_model(save_path)

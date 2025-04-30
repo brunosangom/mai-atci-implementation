@@ -21,7 +21,7 @@ MINI_BATCH_SIZE = 64 # Size of mini-batches for update
 PPO_EPOCHS = 10 # Number of epochs to update the policy per learning cycle
 
 GOAL_REWARD = 475.0 # Reward threshold for CartPole-v1
-NUM_STEPS = 20000 # Total number of steps to train the agent
+NUM_STEPS = 30000 # Total number of steps to train the agent
 EVAL_EPISODES = 20 # Average over this many episodes for evaluation
 TEST_EPISODES = 25 # Number of episodes to test the agent after training
 
