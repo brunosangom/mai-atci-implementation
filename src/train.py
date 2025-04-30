@@ -4,6 +4,7 @@ import numpy as np
 import os
 from datetime import datetime
 from agent import PPOAgent
+import imageio
 # CONFIG is already imported in main.py and passed to train_agent
 
 def evaluate_agent(env_name, agent, eval_episodes, device):
@@ -30,34 +31,38 @@ def evaluate_agent(env_name, agent, eval_episodes, device):
     return np.mean(total_rewards)
 
 def generate_renders(env_name, agent, num_renders, save_dir, device):
-    """Generates video renders of the agent playing."""
-    print(f"Generating {num_renders} renders in {save_dir}...")
-    # os.makedirs(save_dir, exist_ok=True)
-    # Create a temporary env with video recording
+    """Generates GIF renders of the agent playing."""
+    print(f"Generating GIF renders...")
+    os.makedirs(save_dir, exist_ok=True)
+    # Create a temporary env with rgb_array rendering
     render_env = gym.make(env_name, render_mode="rgb_array")
-    # The RecordVideo wrapper needs the directory to exist
-    record_env = gym.wrappers.RecordVideo(render_env, video_folder=save_dir, episode_trigger=lambda x: True, name_prefix="render")
 
     for i in range(num_renders):
-        state, _ = record_env.reset()
+        frames = []
+        state, _ = render_env.reset()
         done = False
         episode_reward = 0
         while not done:
+            # Capture frame before taking action
+            frames.append(render_env.render())
+
             state_tensor = torch.tensor(np.array([state]), dtype=torch.float).to(device)
             with torch.no_grad():
                 action_logits, _ = agent.actor_critic(state_tensor)
                 action = torch.argmax(action_logits, dim=-1).item() # Deterministic action
 
-            next_state, reward, terminated, truncated, _ = record_env.step(action)
+            next_state, reward, terminated, truncated, _ = render_env.step(action)
             done = terminated or truncated
             episode_reward += reward
             state = next_state
+
+        # Save the collected frames as a GIF
+        gif_path = os.path.join(save_dir, f"render_episode_{i}.gif")
+        imageio.mimsave(gif_path, frames, fps=30) # Adjust fps as needed
         print(f"  Render {i+1}/{num_renders} finished. Reward: {episode_reward:.2f}")
 
-    record_env.close() # This saves the videos
     render_env.close() # Close the base env
-    print("Renders generated.")
-
+    print("GIF Renders generated.")
 
 def train_agent(cfg):
     """Trains the PPO agent."""
@@ -131,7 +136,6 @@ def train_agent(cfg):
                 best_eval_reward = avg_eval_reward
                 save_path = os.path.join(model_dir, f"ppo_{cfg['ENV_NAME']}_{timestamp}.pth")
                 agent.save_model(save_path)
-                print(f"New best model saved with reward {best_eval_reward:.2f} at {save_path}")
 
                 # Generate renders if requested
                 if cfg.get('RENDER', False):
