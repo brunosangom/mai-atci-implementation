@@ -68,14 +68,15 @@ class ActorCritic(nn.Module):
         Select an action based on the current policy.
         Used during interaction with the environment.
         Args:
-            state: The current state.
+            state: The current state (can be a batch).
         Returns:
-            action: The selected action.
-            log_prob: The log probability of the selected action.
-            value: The estimated state value (added return)
+            action: The selected action(s) (tensor).
+            log_prob: The log probability of the selected action(s) (tensor).
+            value: The estimated state value(s) (tensor).
         """
         action_logits, value = self.forward(state)
         dist = Categorical(logits=action_logits) # Use logits=...
         action = dist.sample()
         log_prob = dist.log_prob(action)
-        return action.item(), log_prob, value # Return value as well
+        # Return the full action tensor, not .item()
+        return action, log_prob, value

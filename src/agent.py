@@ -22,14 +22,15 @@ class PPOAgent:
         self.memory = PPOMemory(cfg['MINI_BATCH_SIZE'], cfg)
 
     # Use cfg['DEVICE']
-    def select_action(self, state):
-        """Selects an action using the current policy."""
-        state_tensor = torch.tensor(np.array([state]), dtype=torch.float).to(self.cfg['DEVICE'])
+    def select_actions(self, states):
+        """Selects actions for a batch of states using the current policy."""
+        # states is expected to be a numpy array (num_actors, state_dim)
+        states_tensor = torch.tensor(states, dtype=torch.float).to(self.cfg['DEVICE'])
         with torch.no_grad():
-            # act now returns action, log_prob, value
-            action, log_prob, value = self.actor_critic.act(state_tensor)
-        # No need to call critic_head separately
-        return action, log_prob.cpu().numpy(), value.cpu().numpy().item() # Return value as well for storage
+            # act now returns actions, log_probs, values for the batch
+            actions, log_probs, values = self.actor_critic.act(states_tensor)
+        # Return numpy arrays for interaction with vectorized env
+        return actions.cpu().numpy(), log_probs.cpu().numpy(), values.cpu().numpy() # Return batch values
 
     def store_transition(self, state, action, log_prob, reward, value, done):
         """Stores a transition in the memory buffer."""
@@ -45,11 +46,11 @@ class PPOAgent:
     # Use cfg['DEVICE'] in load_model
     def load_model(self, path):
         """Loads the Actor-Critic model state."""
-        print(f"Loading model from {path}...")
+        print(f"Loading model...")
         self.actor_critic.load_state_dict(torch.load(path, map_location=self.cfg['DEVICE']))
         self.actor_critic.eval() # Set to evaluation mode
 
     def save_model(self, path):
         """Saves the Actor-Critic model state."""
-        print(f"Saving model to {path}...")
+        print(f"\nSaving model...")
         torch.save(self.actor_critic.state_dict(), path)

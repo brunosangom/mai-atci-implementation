@@ -38,7 +38,8 @@ class PPOAlgorithm:
                 actor_loss = -torch.min(surr1, surr2).mean()
 
                 # Critic loss (Value loss)
-                critic_loss = (new_values.squeeze() - batch_returns).pow(2).mean()
+                # Remove squeeze() and let broadcasting handle shapes (e.g., (64, 1) - (64,))
+                critic_loss = (new_values - batch_returns).pow(2).mean()
 
                 # Total loss
                 # Use cfg['CRITIC_DISCOUNT'] and cfg['ENTROPY_BETA']

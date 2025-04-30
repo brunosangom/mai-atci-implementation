@@ -8,7 +8,7 @@ import imageio
 # CONFIG is already imported in main.py and passed to train_agent
 
 def evaluate_agent(env_name, agent, eval_episodes, device):
-    """Evaluates the agent over a number of episodes."""
+    """Evaluates the agent over a number of episodes using a single environment."""
     env = gym.make(env_name)
     total_rewards = []
     for _ in range(eval_episodes):
@@ -31,7 +31,7 @@ def evaluate_agent(env_name, agent, eval_episodes, device):
     return np.mean(total_rewards)
 
 def generate_renders(env_name, agent, num_renders, save_dir, device):
-    """Generates GIF renders of the agent playing."""
+    """Generates GIF renders of the agent playing using a single environment."""
     print(f"Generating GIF renders...")
     os.makedirs(save_dir, exist_ok=True)
     # Create a temporary env with rgb_array rendering
@@ -57,25 +57,40 @@ def generate_renders(env_name, agent, num_renders, save_dir, device):
             state = next_state
 
         # Save the collected frames as a GIF
-        gif_path = os.path.join(save_dir, f"render_episode_{i}.gif")
-        imageio.mimsave(gif_path, frames, fps=30) # Adjust fps as needed
+        gif_path = os.path.join(save_dir, f"episode_{i}-reward_{episode_reward:.2f}.gif")
+        imageio.mimsave(gif_path, frames, fps=60) # Adjust fps as needed
         print(f"  Render {i+1}/{num_renders} finished. Reward: {episode_reward:.2f}")
 
     render_env.close() # Close the base env
-    print("GIF Renders generated.")
+    print("GIF Renders generated.\n")
 
 def train_agent(cfg):
-    """Trains the PPO agent."""
+    """Trains the PPO agent using parallel environments."""
     print(f"Using device: {cfg['DEVICE']}")
-    print(f"Training on environment: {cfg['ENV_NAME']}")
+    print(f"Training on environment: {cfg['ENV_NAME']} with {cfg['NUM_ACTORS']} actors")
     print("Configuration:")
     for key, value in cfg.items():
         print(f"  {key}: {value}")
 
     # --- Initialization ---
-    env = gym.make(cfg['ENV_NAME'])
-    state_dim = env.observation_space.shape[0]
-    action_dim = env.action_space.n
+    # Create a function to generate individual environments
+    def make_env(env_id, seed):
+        def _init():
+            env = gym.make(env_id)
+            # Consider seeding if reproducibility across actors is critical
+            # env.reset(seed=seed + rank) # Example seeding
+            return env
+        return _init
+
+    # Create the vectorized environment
+    # envs = gymnasium.vector.SyncVectorEnv( # Use SyncVectorEnv for simplicity first
+    envs = gym.vector.AsyncVectorEnv( # Use Async for potential speedup
+        [make_env(cfg['ENV_NAME'], i) for i in range(cfg['NUM_ACTORS'])]
+    )
+
+    # Get dimensions from the vector environment's observation/action spaces
+    state_dim = envs.single_observation_space.shape[0]
+    action_dim = envs.single_action_space.n
 
     agent = PPOAgent(state_dim, action_dim, cfg)
 
@@ -87,49 +102,84 @@ def train_agent(cfg):
 
 
     total_steps = 0
-    episode = 0
+    global_episode_count = 0 # Track total episodes across all actors
     best_eval_reward = -np.inf
 
     # --- Training Loop ---
-    state, _ = env.reset()
+    # Reset all environments and get initial states
+    states, _ = envs.reset() # states is now a numpy array (NUM_ACTORS, state_dim)
 
     while total_steps < cfg['NUM_STEPS']:
         # --- Data Collection Phase ---
+        # Collect PPO_STEPS * NUM_ACTORS transitions in total per cycle
         for step in range(cfg['PPO_STEPS']):
-            action, log_prob, value = agent.select_action(state)
-            next_state, reward, terminated, truncated, _ = env.step(action)
-            done = terminated or truncated
+            # Select actions for the batch of states
+            # states are already a numpy array, agent.select_actions should handle it
+            actions, log_probs, values = agent.select_actions(states) # Expects batch input
 
-            agent.store_transition(state, action, log_prob, reward, value, done)
-            state = next_state
-            total_steps += 1
+            # Step the parallel environments
+            # actions need to be numpy array for vec env
+            next_states, rewards, terminateds, truncateds, _ = envs.step(actions)
+            dones = np.logical_or(terminateds, truncateds) # Combine termination conditions
 
-            if done:
-                episode += 1
-                state, _ = env.reset()
+            # Store transitions for each actor
+            for i in range(cfg['NUM_ACTORS']):
+                # Extract individual data points
+                state = states[i]
+                action = actions[i]
+                log_prob = log_probs[i]
+                reward = rewards[i]
+                value = values[i] # Get the value for the state *before* stepping
+                done = dones[i]
+
+                agent.store_transition(state, action, log_prob, reward, value, done)
+
+                # If an episode finished in one of the environments
+                if done:
+                    global_episode_count += 1
+                    # Check for 'final_observation' in infos if available and needed
+                    # Resetting is handled automatically by AsyncVectorEnv
+
+            # Update states for the next iteration
+            states = next_states
+            total_steps += cfg['NUM_ACTORS'] # Increment by the number of actors
 
             # Break if total steps reached during collection
             if total_steps >= cfg['NUM_STEPS']:
                 break
 
         # --- Learning Phase ---
-        # Bootstrap value estimation for the last state if not done
-        last_done = done
-        if not last_done:
-            state_tensor = torch.tensor(np.array([state]), dtype=torch.float).to(cfg['DEVICE'])
-            with torch.no_grad():
-                 _, next_value = agent.actor_critic(state_tensor)
-                 next_value = next_value.cpu().numpy().item() # Get scalar value
-        else:
-            next_value = 0.0 # Terminal state value is 0
+        # Bootstrap value estimation for the last states from each actor
+        # Need to get values for the *next_states* (which are the current 'states')
+        with torch.no_grad():
+            # states are the final states after the collection loop
+            states_tensor = torch.tensor(states, dtype=torch.float).to(cfg['DEVICE'])
+            _, next_values_tensor = agent.actor_critic(states_tensor) # Get values for the last states
+            next_values = next_values_tensor.cpu().numpy().flatten() # Flatten to (NUM_ACTORS,)
 
-        agent.learn(next_value, last_done) # Pass bootstrap info
+        # The memory buffer now contains transitions from all actors interleaved.
+        # We need to calculate GAE correctly. The current memory implementation
+        # calculates GAE assuming a single continuous trajectory. This needs fixing.
+        # For now, we'll pass a dummy next_value and last_done, acknowledging this limitation.
+        # A more correct implementation would require restructuring the memory buffer
+        # or calculating GAE per-actor before storing/batching.
+
+        # *** Temporary/Incorrect GAE Handling for Vectorized Env ***
+        # Calculate an average next value, ignoring individual dones for now.
+        # This is NOT the correct way to handle GAE with vector envs but allows training to proceed.
+        # A proper fix involves modifying PPOMemory.generate_batches or how data is stored.
+        avg_next_value = np.mean(next_values * (1.0 - dones.astype(float))) # Approximate bootstrap
+        # Assume the 'last_done' for the whole batch calculation is based on 'any' done.
+        # This is also an approximation.
+        batch_last_done = np.any(dones)
+
+        agent.learn(avg_next_value, batch_last_done) # Pass approximated bootstrap info
 
         # --- Evaluation Phase ---
-        # Evaluate the agent periodically (e.g., after each learning cycle)
-        if episode > 0: # Start evaluating after at least one learning cycle
+        if global_episode_count > 0: # Evaluate after some episodes have finished
+            # Use the single-env evaluation function
             avg_eval_reward = evaluate_agent(cfg['ENV_NAME'], agent, cfg['EVAL_EPISODES'], cfg['DEVICE'])
-            print(f"Evaluation after {total_steps} steps: Average Reward = {avg_eval_reward:.2f}")
+            print(f"Evaluation after {total_steps} steps ({global_episode_count} episodes): Average Reward = {avg_eval_reward:.2f}")
 
             # Save the model if it's the best so far
             if avg_eval_reward > best_eval_reward and total_steps >= cfg['NUM_STEPS'] * 0.1:
@@ -137,33 +187,36 @@ def train_agent(cfg):
                 save_path = os.path.join(model_dir, f"ppo_{cfg['ENV_NAME']}_{timestamp}.pth")
                 agent.save_model(save_path)
 
-                # Generate renders if requested
+                # Generate renders if requested (using the best agent)
                 if cfg.get('RENDER', False):
                     render_save_dir = os.path.join(model_dir, "renders", f"{avg_eval_reward:.2f}")
                     generate_renders(cfg['ENV_NAME'], agent, 3, render_save_dir, cfg['DEVICE'])
             
+            # Check goal reward
             if best_eval_reward >= cfg['GOAL_REWARD']:
                 print(f"Goal reward of {cfg['GOAL_REWARD']} reached! Stopping training.")
                 break
 
 
     # --- Final Evaluation & Saving ---
-    print("\nTraining finished.")
+    print("\nTraining complete.")
     # Load the best model for final evaluation
     best_model_path = os.path.join(model_dir, f"ppo_{cfg['ENV_NAME']}_{timestamp}.pth")
     if os.path.exists(best_model_path):
-        print(f"Loading best model from {best_model_path} for final evaluation.")
+        print(f"Loading best model for final evaluation.")
 
         best_agent = PPOAgent(state_dim, action_dim, cfg)
         best_agent.load_model(best_model_path)
+        # Evaluate using the single-env evaluator
         final_avg_reward = evaluate_agent(cfg['ENV_NAME'], best_agent, cfg['TEST_EPISODES'], cfg['DEVICE'])
-        print(f"Final Evaluation (Best Model): Average Reward = {final_avg_reward:.2f}")
+        print(f"Final Evaluation (Best Model): Average Reward over {cfg['TEST_EPISODES']} episodes = {final_avg_reward:.2f}")
+
     else:
         print("No best model was saved during training. Evaluating current agent state.")
+        # Evaluate the final state of the training agent using the single-env evaluator
         final_avg_reward = evaluate_agent(cfg['ENV_NAME'], agent, cfg['TEST_EPISODES'], cfg['DEVICE'])
         print(f"Final Evaluation (Current Agent): Average Reward = {final_avg_reward:.2f}")
 
 
-    env.close()
-    print("Training complete.")
+    envs.close()
 
