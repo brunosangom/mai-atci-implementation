@@ -98,7 +98,7 @@ def train_agent(cfg):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     model_dir = os.path.join("ppo_models", f"ppo_{cfg['ENV_NAME']}_{timestamp}")
     os.makedirs(model_dir, exist_ok=True)
-    print(f"Models will be saved in: {model_dir}")
+    print(f"Models and renders will be saved in: {model_dir}")
 
 
     total_steps = 0
@@ -154,26 +154,16 @@ def train_agent(cfg):
         with torch.no_grad():
             # states are the final states after the collection loop
             states_tensor = torch.tensor(states, dtype=torch.float).to(cfg['DEVICE'])
-            _, next_values_tensor = agent.actor_critic(states_tensor) # Get values for the last states
-            next_values = next_values_tensor.cpu().numpy().flatten() # Flatten to (NUM_ACTORS,)
+            # Get values for the last states reached by each actor
+            _, next_values_tensor = agent.actor_critic(states_tensor)
+            # Ensure next_values is a flat numpy array (NUM_ACTORS,)
+            next_values = next_values_tensor.squeeze().cpu().numpy()
+            # Ensure dones is a numpy boolean array (NUM_ACTORS,)
+            last_dones = dones.astype(bool)
 
-        # The memory buffer now contains transitions from all actors interleaved.
-        # We need to calculate GAE correctly. The current memory implementation
-        # calculates GAE assuming a single continuous trajectory. This needs fixing.
-        # For now, we'll pass a dummy next_value and last_done, acknowledging this limitation.
-        # A more correct implementation would require restructuring the memory buffer
-        # or calculating GAE per-actor before storing/batching.
 
-        # *** Temporary/Incorrect GAE Handling for Vectorized Env ***
-        # Calculate an average next value, ignoring individual dones for now.
-        # This is NOT the correct way to handle GAE with vector envs but allows training to proceed.
-        # A proper fix involves modifying PPOMemory.generate_batches or how data is stored.
-        avg_next_value = np.mean(next_values * (1.0 - dones.astype(float))) # Approximate bootstrap
-        # Assume the 'last_done' for the whole batch calculation is based on 'any' done.
-        # This is also an approximation.
-        batch_last_done = np.any(dones)
-
-        agent.learn(avg_next_value, batch_last_done) # Pass approximated bootstrap info
+        # Pass the actual next values and done flags for each actor to learn
+        agent.learn(next_values, last_dones) # Pass arrays (NUM_ACTORS,)
 
         # --- Evaluation Phase ---
         if global_episode_count > 0: # Evaluate after some episodes have finished

@@ -10,10 +10,10 @@ class PPOAlgorithm:
         self.optimizer = optim.Adam(self.actor_critic.parameters(), lr=cfg['LEARNING_RATE'])
 
     # Use cfg for update parameters
-    def update(self, memory, next_value, last_done): # Add parameters
+    def update(self, memory, next_values, last_dones): # Add parameters
         """Performs PPO update."""
         # Generate batches using memory, providing bootstrap info
-        states, actions, old_log_probs, old_values, advantages, returns, batches = memory.generate_batches(next_value, last_done)
+        states, actions, old_log_probs, old_values, advantages, returns, batches = memory.generate_batches(next_values, last_dones)
 
         for _ in range(self.cfg['PPO_EPOCHS']): # Use cfg['PPO_EPOCHS']
             for batch_indices in batches:
