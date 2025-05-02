@@ -21,7 +21,6 @@ class ActorCritic(nn.Module):
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, action_dim)
-            # REMOVED nn.Softmax(dim=-1) - Categorical distribution expects logits
         )
 
         # Critic head: outputs state value
@@ -58,7 +57,7 @@ class ActorCritic(nn.Module):
             entropy: Policy entropy.
         """
         action_logits, value = self.forward(state)
-        dist = Categorical(logits=action_logits) # Use logits=...
+        dist = Categorical(logits=action_logits)
         log_probs = dist.log_prob(action)
         entropy = dist.entropy().mean()
         return value, log_probs, entropy
@@ -75,8 +74,7 @@ class ActorCritic(nn.Module):
             value: The estimated state value(s) (tensor).
         """
         action_logits, value = self.forward(state)
-        dist = Categorical(logits=action_logits) # Use logits=...
+        dist = Categorical(logits=action_logits)
         action = dist.sample()
         log_prob = dist.log_prob(action)
-        # Return the full action tensor, not .item()
         return action, log_prob, value

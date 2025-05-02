@@ -5,7 +5,6 @@ import os
 from datetime import datetime
 from agent import PPOAgent
 import imageio
-# CONFIG is already imported in main.py and passed to train_agent
 
 def evaluate_agent(env_name, agent, eval_episodes, device):
     """Evaluates the agent over a number of episodes using a single environment."""
@@ -58,10 +57,10 @@ def generate_renders(env_name, agent, num_renders, save_dir, device):
 
         # Save the collected frames as a GIF
         gif_path = os.path.join(save_dir, f"episode_{i}-reward_{episode_reward:.2f}.gif")
-        imageio.mimsave(gif_path, frames, fps=60) # Adjust fps as needed
+        imageio.mimsave(gif_path, frames, fps=60)
         print(f"  Render {i+1}/{num_renders} finished. Reward: {episode_reward:.2f}")
 
-    render_env.close() # Close the base env
+    render_env.close() # Close the temporary env
     print("GIF Renders generated.\n")
 
 def train_agent(cfg):
@@ -74,18 +73,15 @@ def train_agent(cfg):
 
     # --- Initialization ---
     # Create a function to generate individual environments
-    def make_env(env_id, seed):
+    def make_env(env_id):
         def _init():
             env = gym.make(env_id)
-            # Consider seeding if reproducibility across actors is critical
-            # env.reset(seed=seed + rank) # Example seeding
             return env
         return _init
 
-    # Create the vectorized environment
-    # envs = gymnasium.vector.SyncVectorEnv( # Use SyncVectorEnv for simplicity first
-    envs = gym.vector.AsyncVectorEnv( # Use Async for potential speedup
-        [make_env(cfg['ENV_NAME'], i) for i in range(cfg['NUM_ACTORS'])]
+    # Create the vectorized environment to allow parallel actors
+    envs = gym.vector.AsyncVectorEnv(
+        [make_env(cfg['ENV_NAME']) for _ in range(cfg['NUM_ACTORS'])]
     )
 
     # Get dimensions from the vector environment's observation/action spaces
@@ -107,18 +103,16 @@ def train_agent(cfg):
 
     # --- Training Loop ---
     # Reset all environments and get initial states
-    states, _ = envs.reset() # states is now a numpy array (NUM_ACTORS, state_dim)
+    states, _ = envs.reset()
 
     while total_steps < cfg['NUM_STEPS']:
         # --- Data Collection Phase ---
         # Collect PPO_STEPS * NUM_ACTORS transitions in total per cycle
         for step in range(cfg['PPO_STEPS']):
             # Select actions for the batch of states
-            # states are already a numpy array, agent.select_actions should handle it
-            actions, log_probs, values = agent.select_actions(states) # Expects batch input
+            actions, log_probs, values = agent.select_actions(states)
 
             # Step the parallel environments
-            # actions need to be numpy array for vec env
             next_states, rewards, terminateds, truncateds, _ = envs.step(actions)
             dones = np.logical_or(terminateds, truncateds) # Combine termination conditions
 
@@ -129,7 +123,7 @@ def train_agent(cfg):
                 action = actions[i]
                 log_prob = log_probs[i]
                 reward = rewards[i]
-                value = values[i] # Get the value for the state *before* stepping
+                value = values[i]
                 done = dones[i]
 
                 agent.store_transition(state, action, log_prob, reward, value, done)
@@ -137,8 +131,7 @@ def train_agent(cfg):
                 # If an episode finished in one of the environments
                 if done:
                     global_episode_count += 1
-                    # Check for 'final_observation' in infos if available and needed
-                    # Resetting is handled automatically by AsyncVectorEnv
+                    # Resetting the env is handled automatically by AsyncVectorEnv
 
             # Update states for the next iteration
             states = next_states
@@ -150,7 +143,6 @@ def train_agent(cfg):
 
         # --- Learning Phase ---
         # Bootstrap value estimation for the last states from each actor
-        # Need to get values for the *next_states* (which are the current 'states')
         with torch.no_grad():
             # states are the final states after the collection loop
             states_tensor = torch.tensor(states, dtype=torch.float).to(cfg['DEVICE'])
@@ -163,7 +155,7 @@ def train_agent(cfg):
 
 
         # Pass the actual next values and done flags for each actor to learn
-        agent.learn(next_values, last_dones) # Pass arrays (NUM_ACTORS,)
+        agent.learn(next_values, last_dones)
 
         # --- Evaluation Phase ---
         if global_episode_count > 0: # Evaluate after some episodes have finished
@@ -177,7 +169,7 @@ def train_agent(cfg):
                 save_path = os.path.join(model_dir, f"ppo_{cfg['ENV_NAME']}_{timestamp}.pth")
                 agent.save_model(save_path)
 
-                # Generate renders if requested (using the best agent)
+                # Generate renders if requested
                 if cfg.get('RENDER', False):
                     render_save_dir = os.path.join(model_dir, "renders", f"{avg_eval_reward:.2f}")
                     generate_renders(cfg['ENV_NAME'], agent, 3, render_save_dir, cfg['DEVICE'])
