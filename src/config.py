@@ -2,7 +2,7 @@
 import torch
 
 # Environment
-ENV_NAME = "CartPole-v1"
+# ENV_NAME = "CartPole-v1" # Removed: Will be set in main.py
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Hyperparameters
@@ -28,7 +28,7 @@ TEST_EPISODES = 25 # Number of episodes to test the agent after training
 RENDER = True # Whether to render episodes after training
 
 CONFIG = {
-    'ENV_NAME': ENV_NAME,
+    # 'ENV_NAME': ENV_NAME, # Removed: Set in main.py
     'DEVICE': DEVICE,
     'LEARNING_RATE': LEARNING_RATE,
     'GAMMA': GAMMA,
