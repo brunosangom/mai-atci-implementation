@@ -1,4 +1,5 @@
 torch
 imageio
 gymnasium[classic_control]
+gymnasium[box2d]
 gymnasium[other]
