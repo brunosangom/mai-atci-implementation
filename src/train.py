@@ -4,9 +4,9 @@ import numpy as np
 import os
 from datetime import datetime
 from agent import PPOAgent
-import imageio
 from gymnasium.wrappers import RecordVideo
 import glob
+import json
 
 def evaluate_agent(env_name, agent, eval_episodes, device):
     """Evaluates the agent over a number of episodes using a single environment."""
@@ -111,8 +111,16 @@ def train_agent(cfg):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     model_dir = os.path.join("ppo_models", f"ppo_{cfg['ENV_NAME']}_{timestamp}")
     os.makedirs(model_dir, exist_ok=True)
-    print(f"Models and renders will be saved in: {model_dir}")
+    print(f"Models, config, and renders will be saved in: {model_dir}")
 
+    # Save the configuration dictionary as a JSON file
+    config_path = os.path.join(model_dir, "config.json")
+    try:
+        with open(config_path, 'w') as f:
+            json.dump(cfg, f, indent=4)
+        print(f"Configuration saved to {config_path}")
+    except Exception as e:
+        print(f"Error saving configuration to {config_path}: {e}")
 
     total_steps = 0
     global_episode_count = 0 # Track total episodes across all actors
@@ -153,10 +161,6 @@ def train_agent(cfg):
             # Update states for the next iteration
             states = next_states
             total_steps += cfg['NUM_ACTORS'] # Increment by the number of actors
-
-            # Break if total steps reached during collection
-            if total_steps >= cfg['NUM_STEPS']:
-                break
 
         # --- Learning Phase ---
         # Bootstrap value estimation for the last states from each actor
