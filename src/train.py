@@ -5,6 +5,8 @@ import os
 from datetime import datetime
 from agent import PPOAgent
 import imageio
+from gymnasium.wrappers import RecordVideo
+import glob
 
 def evaluate_agent(env_name, agent, eval_episodes, device):
     """Evaluates the agent over a number of episodes using a single environment."""
@@ -30,21 +32,24 @@ def evaluate_agent(env_name, agent, eval_episodes, device):
     return np.mean(total_rewards)
 
 def generate_renders(env_name, agent, num_renders, save_dir, device):
-    """Generates GIF renders of the agent playing using a single environment."""
-    print(f"Generating GIF renders...")
+    """Generates video renders of the agent playing using RecordVideo."""
+    print(f"Generating video renders...")
     os.makedirs(save_dir, exist_ok=True)
-    # Create a temporary env with rgb_array rendering
-    render_env = gym.make(env_name, render_mode="rgb_array")
 
     for i in range(num_renders):
-        frames = []
+        # Create a new RecordVideo wrapped env for each render
+        temp_video_folder = os.path.join(save_dir, f"temp_render_{i}")
+        render_env = RecordVideo(
+            gym.make(env_name, render_mode="rgb_array"),
+            video_folder=temp_video_folder,
+            episode_trigger=lambda x: True, # Record every episode
+            name_prefix=f"rl-video-render-{i}" # Unique prefix for this render
+        )
+
         state, _ = render_env.reset()
         done = False
         episode_reward = 0
         while not done:
-            # Capture frame before taking action
-            frames.append(render_env.render())
-
             state_tensor = torch.tensor(np.array([state]), dtype=torch.float).to(device)
             with torch.no_grad():
                 action_logits, _ = agent.actor_critic(state_tensor)
@@ -55,13 +60,25 @@ def generate_renders(env_name, agent, num_renders, save_dir, device):
             episode_reward += reward
             state = next_state
 
-        # Save the collected frames as a GIF
-        gif_path = os.path.join(save_dir, f"episode_{i}-reward_{episode_reward:.2f}.gif")
-        imageio.mimsave(gif_path, frames, fps=60)
-        print(f"  Render {i+1}/{num_renders} finished. Reward: {episode_reward:.2f}")
+        # Closing the env triggers the video saving by RecordVideo
+        render_env.close()
 
-    render_env.close() # Close the temporary env
-    print("GIF Renders generated.\n")
+        # --- Rename the generated video file ---
+        video_files = glob.glob(os.path.join(temp_video_folder, "*.mp4"))
+        if video_files:
+            source_path = video_files[0]
+            # Define the desired destination path with the reward included in the filename
+            destination_path = os.path.join(save_dir, f"episode_{i}-reward_{episode_reward:.2f}.mp4")
+            # Rename the file
+            os.rename(source_path, destination_path)
+            # Remove the temporary directory
+            os.rmdir(temp_video_folder)
+            print(f"  Render {i+1}/{num_renders} finished. Reward: {episode_reward:.2f}")
+        else:
+             print(f"  Render {i+1}/{num_renders} finished. Reward: {episode_reward:.2f}. Error: Could not find saved video file in {temp_video_folder}.")
+
+
+    print("Video Renders generated.\n")
 
 def train_agent(cfg):
     """Trains the PPO agent using parallel environments."""
@@ -164,7 +181,7 @@ def train_agent(cfg):
             print(f"Evaluation after {total_steps} steps ({global_episode_count} episodes): Average Reward = {avg_eval_reward:.2f}")
 
             # Save the model if it's the best so far
-            if avg_eval_reward > best_eval_reward and total_steps >= cfg['NUM_STEPS'] * 0.1:
+            if avg_eval_reward > best_eval_reward and (total_steps >= cfg['NUM_STEPS'] * 0.1 or avg_eval_reward >= cfg['GOAL_REWARD']):
                 best_eval_reward = avg_eval_reward
                 save_path = os.path.join(model_dir, f"ppo_{cfg['ENV_NAME']}_{timestamp}.pth")
                 agent.save_model(save_path)

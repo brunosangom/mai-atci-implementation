@@ -2,6 +2,7 @@
 import torch
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+RENDER = True # Whether to render episodes after training
 
 # --- CartPole-v1 Configuration ---
 CARTPOLE_CONFIG = {
@@ -25,7 +26,7 @@ CARTPOLE_CONFIG = {
     'EVAL_EPISODES': 20, # Average over this many episodes for evaluation
     'TEST_EPISODES': 25, # Number of episodes to test the agent after training
 
-    'RENDER': True, # Whether to render episodes after training
+    'RENDER': RENDER,
     'DEVICE': DEVICE,
 }
 
@@ -39,19 +40,19 @@ LUNARLANDER_CONFIG = {
     'PPO_EPSILON': 0.2,
     'CRITIC_DISCOUNT': 0.5,
     'ENTROPY_BETA': 0.01,
-    'HIDDEN_SIZE': 64,
+    'HIDDEN_SIZE': 128,
 
     'LEARNING_RATE': 3e-4,
-    'PPO_STEPS': 256, # Number of steps to collect in each environment per update
-    'NUM_ACTORS': 2, # Number of parallel actors (environments) to collect samples from
-    'MINI_BATCH_SIZE': 64, # Size of mini-batches for update
-    'PPO_EPOCHS': 10, # Number of epochs to update the policy per learning cycle
+    'PPO_STEPS': 2048,
+    'NUM_ACTORS': 8,
+    'MINI_BATCH_SIZE': 64,
+    'PPO_EPOCHS': 10,
 
-    'NUM_STEPS': 30000, # Total number of steps to train the agent
-    'EVAL_EPISODES': 20, # Average over this many episodes for evaluation
-    'TEST_EPISODES': 25, # Number of episodes to test the agent after training
+    'NUM_STEPS': 1000000,
+    'EVAL_EPISODES': 20,
+    'TEST_EPISODES': 25,
 
-    'RENDER': True, # Whether to render episodes after training
+    'RENDER': RENDER,
     'DEVICE': DEVICE,
 }
 
@@ -68,16 +69,16 @@ ACROBOT_CONFIG = {
     'HIDDEN_SIZE': 64,
 
     'LEARNING_RATE': 3e-4,
-    'PPO_STEPS': 256, # Number of steps to collect in each environment per update
-    'NUM_ACTORS': 2, # Number of parallel actors (environments) to collect samples from
-    'MINI_BATCH_SIZE': 64, # Size of mini-batches for update
-    'PPO_EPOCHS': 10, # Number of epochs to update the policy per learning cycle
+    'PPO_STEPS': 256,
+    'NUM_ACTORS': 16,
+    'MINI_BATCH_SIZE': 128,
+    'PPO_EPOCHS': 4,
 
-    'NUM_STEPS': 30000, # Total number of steps to train the agent
-    'EVAL_EPISODES': 20, # Average over this many episodes for evaluation
-    'TEST_EPISODES': 25, # Number of episodes to test the agent after training
+    'NUM_STEPS': 100000,
+    'EVAL_EPISODES': 20,
+    'TEST_EPISODES': 25,
 
-    'RENDER': True, # Whether to render episodes after training
+    'RENDER': RENDER,
     'DEVICE': DEVICE,
 }
 
