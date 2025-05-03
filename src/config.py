@@ -30,32 +30,6 @@ CARTPOLE_CONFIG = {
     'DEVICE': DEVICE,
 }
 
-# --- LunarLander-v3 Configuration ---
-LUNARLANDER_CONFIG = {
-    'ENV_NAME': "LunarLander-v3",
-    'GOAL_REWARD': 200.0,
-
-    'GAMMA': 0.99,
-    'GAE_LAMBDA': 0.95,
-    'PPO_EPSILON': 0.2,
-    'CRITIC_DISCOUNT': 0.5,
-    'ENTROPY_BETA': 0.01,
-    'HIDDEN_SIZE': 128,
-
-    'LEARNING_RATE': 3e-4,
-    'PPO_STEPS': 2048,
-    'NUM_ACTORS': 8,
-    'MINI_BATCH_SIZE': 64,
-    'PPO_EPOCHS': 10,
-
-    'NUM_STEPS': 1000000,
-    'EVAL_EPISODES': 20,
-    'TEST_EPISODES': 25,
-
-    'RENDER': RENDER,
-    'DEVICE': DEVICE,
-}
-
 # --- Acrobot-v1 Configuration ---
 ACROBOT_CONFIG = {
     'ENV_NAME': "Acrobot-v1",
@@ -75,6 +49,32 @@ ACROBOT_CONFIG = {
     'PPO_EPOCHS': 4,
 
     'NUM_STEPS': 100000,
+    'EVAL_EPISODES': 10,
+    'TEST_EPISODES': 25,
+
+    'RENDER': RENDER,
+    'DEVICE': DEVICE,
+}
+
+# --- MountainCarContinuous-v0 Configuration ---
+MCC_CONFIG = {
+    'ENV_NAME': "MountainCarContinuous-v0",
+    'GOAL_REWARD': 90.0,
+
+    'GAMMA': 0.99,
+    'GAE_LAMBDA': 0.95,
+    'PPO_EPSILON': 0.2,
+    'CRITIC_DISCOUNT': 0.5,
+    'ENTROPY_BETA': 0.01,
+    'HIDDEN_SIZE': 64,
+
+    'LEARNING_RATE': 3e-4,
+    'PPO_STEPS': 256,
+    'NUM_ACTORS': 2,
+    'MINI_BATCH_SIZE': 64,
+    'PPO_EPOCHS': 10,
+
+    'NUM_STEPS': 30000,
     'EVAL_EPISODES': 20,
     'TEST_EPISODES': 25,
 
@@ -84,6 +84,6 @@ ACROBOT_CONFIG = {
 
 CONFIGS = {
     "CartPole-v1": CARTPOLE_CONFIG,
-    "LunarLander-v3": LUNARLANDER_CONFIG,
+    "MountainCarContinuous-v0": MCC_CONFIG,
     "Acrobot-v1": ACROBOT_CONFIG,
 }

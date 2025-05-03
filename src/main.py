@@ -2,7 +2,7 @@ from train import train_agent
 from config import CONFIGS
 
 # --- Environment Selection ---
-ENVIRONMENTS = ["CartPole-v1", "LunarLander-v3", "Acrobot-v1"]
+ENVIRONMENTS = ["CartPole-v1", "Acrobot-v1", "MountainCarContinuous-v0"]
 SELECTED_ENV = ENVIRONMENTS[0]
 
 # --- Main Execution ---
