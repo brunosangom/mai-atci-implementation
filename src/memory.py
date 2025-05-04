@@ -3,7 +3,7 @@ import torch
 
 class PPOMemory:
     """Stores transitions for PPO updates."""
-    def __init__(self, cfg):
+    def __init__(self, cfg, is_continuous=False):
         self.states = []
         self.actions = []
         self.log_probs = []
@@ -16,6 +16,7 @@ class PPOMemory:
         self.device = cfg['DEVICE']
         self.gamma = cfg['GAMMA']
         self.gae_lambda = cfg['GAE_LAMBDA']
+        self.is_continuous = is_continuous # Store action space type
 
     def store_memory(self, state, action, log_prob, reward, value, done):
         self.states.append(state)
@@ -48,7 +49,26 @@ class PPOMemory:
             raise e
 
         states_tensor = torch.tensor(states_np, dtype=torch.float).to(self.device)
-        actions_tensor = torch.tensor(np.array(self.actions), dtype=torch.long).to(self.device)
+
+        # Determine action dtype based on action space type
+        action_dtype = torch.float if self.is_continuous else torch.long
+        # Stack actions appropriately
+        if self.is_continuous:
+            # Actions are likely numpy arrays, stack them along a new dimension
+            try:
+                actions_np = np.vstack(self.actions).astype(np.float32)
+            except ValueError as e:
+                 print(f"Error stacking continuous actions: {e}")
+                 # Check shapes if error occurs
+                 if self.actions:
+                     print(f"Action shapes: {[a.shape for a in self.actions]}")
+                 raise e
+        else:
+            # Actions are likely scalars (indices)
+            actions_np = np.array(self.actions)
+
+        actions_tensor = torch.tensor(actions_np, dtype=action_dtype).to(self.device)
+
         log_probs_tensor = torch.tensor(np.array(self.log_probs), dtype=torch.float).to(self.device)
         # These will be reshaped for GAE calculation
         rewards_np = np.array(self.rewards, dtype=np.float32)

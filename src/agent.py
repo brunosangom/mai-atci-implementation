@@ -6,19 +6,20 @@ from ppo import PPOAlgorithm
 
 class PPOAgent:
     """Agent that interacts with the environment and learns using PPO."""
-    def __init__(self, state_dim, action_dim, cfg):
+    def __init__(self, state_dim, action_dim, cfg, is_continuous=False):
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.cfg = cfg # Store config
+        self.is_continuous = is_continuous
 
         # Initialize Actor-Critic model
-        self.actor_critic = ActorCritic(state_dim, action_dim, cfg['HIDDEN_SIZE']).to(cfg['DEVICE'])
+        self.actor_critic = ActorCritic(state_dim, action_dim, cfg['HIDDEN_SIZE'], is_continuous=is_continuous).to(cfg['DEVICE'])
 
         # Initialize PPO Algorithm
         self.ppo_algorithm = PPOAlgorithm(self.actor_critic, cfg)
 
         # Initialize Memory buffer
-        self.memory = PPOMemory(cfg)
+        self.memory = PPOMemory(cfg, is_continuous=is_continuous)
 
     def select_actions(self, states):
         """Selects actions for a batch of states using the current policy."""

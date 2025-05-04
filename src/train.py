@@ -4,13 +4,16 @@ import numpy as np
 import os
 from datetime import datetime
 from agent import PPOAgent
-from gymnasium.wrappers import RecordVideo
+from gymnasium.wrappers import RecordVideo, ClipAction
 import glob
 import json
 
-def evaluate_agent(env_name, agent, eval_episodes, device):
+def evaluate_agent(env_name, agent, eval_episodes, device, is_continuous):
     """Evaluates the agent over a number of episodes using a single environment."""
     env = gym.make(env_name)
+    if is_continuous:
+        env = ClipAction(env) # Clip actions to the environment's bounds
+
     total_rewards = []
     for _ in range(eval_episodes):
         state, _ = env.reset()
@@ -19,9 +22,10 @@ def evaluate_agent(env_name, agent, eval_episodes, device):
         while not done:
             state_tensor = torch.tensor(np.array([state]), dtype=torch.float).to(device)
             with torch.no_grad():
-                # Only need action for evaluation, ignore log_prob and value
-                action_logits, _ = agent.actor_critic(state_tensor)
-                action = torch.argmax(action_logits, dim=-1).item() # Choose best action deterministically
+                # Get deterministic action from the agent's model
+                action_tensor = agent.actor_critic.get_deterministic_action(state_tensor)
+                action = action_tensor.cpu().numpy()
+                action = action[0] if is_continuous else action.item()
 
             next_state, reward, terminated, truncated, _ = env.step(action)
             done = terminated or truncated
@@ -31,7 +35,7 @@ def evaluate_agent(env_name, agent, eval_episodes, device):
     env.close()
     return np.mean(total_rewards)
 
-def generate_renders(env_name, agent, num_renders, save_dir, device):
+def generate_renders(env_name, agent, num_renders, save_dir, device, is_continuous):
     """Generates video renders of the agent playing using RecordVideo."""
     print(f"Generating video renders...")
     os.makedirs(save_dir, exist_ok=True)
@@ -39,8 +43,12 @@ def generate_renders(env_name, agent, num_renders, save_dir, device):
     for i in range(num_renders):
         # Create a new RecordVideo wrapped env for each render
         temp_video_folder = os.path.join(save_dir, f"temp_render_{i}")
+        render_env_base = gym.make(env_name, render_mode="rgb_array")
+        if is_continuous:
+            render_env_base = ClipAction(render_env_base) # Clip actions
+
         render_env = RecordVideo(
-            gym.make(env_name, render_mode="rgb_array"),
+            render_env_base,
             video_folder=temp_video_folder,
             episode_trigger=lambda x: True, # Record every episode
             name_prefix=f"rl-video-render-{i}" # Unique prefix for this render
@@ -52,8 +60,10 @@ def generate_renders(env_name, agent, num_renders, save_dir, device):
         while not done:
             state_tensor = torch.tensor(np.array([state]), dtype=torch.float).to(device)
             with torch.no_grad():
-                action_logits, _ = agent.actor_critic(state_tensor)
-                action = torch.argmax(action_logits, dim=-1).item() # Deterministic action
+                # Get deterministic action
+                action_tensor = agent.actor_critic.get_deterministic_action(state_tensor)
+                action = action_tensor.cpu().numpy()
+                action = action[0] if is_continuous else action.item()
 
             next_state, reward, terminated, truncated, _ = render_env.step(action)
             done = terminated or truncated
@@ -89,10 +99,29 @@ def train_agent(cfg):
         print(f"  {key}: {value}")
 
     # --- Initialization ---
+    # Create a temporary single env to get space info
+    temp_env = gym.make(cfg['ENV_NAME'])
+    is_continuous = isinstance(temp_env.action_space, gym.spaces.Box)
+    state_dim = temp_env.observation_space.shape[0]
+
+    if is_continuous:
+        action_dim = temp_env.action_space.shape[0]
+        action_low = temp_env.action_space.low
+        action_high = temp_env.action_space.high
+        print(f"Detected Continuous action space (dim={action_dim}, low={action_low}, high={action_high})")
+    else:
+        action_dim = temp_env.action_space.n
+        action_low, action_high = None, None # Not applicable for discrete
+        print(f"Detected Discrete action space (n={action_dim})")
+    temp_env.close() # Close the temporary environment
+
     # Create a function to generate individual environments
     def make_env(env_id):
         def _init():
             env = gym.make(env_id)
+            # Apply ClipAction wrapper for continuous environments within the vector env
+            if is_continuous:
+                env = ClipAction(env)
             return env
         return _init
 
@@ -101,11 +130,7 @@ def train_agent(cfg):
         [make_env(cfg['ENV_NAME']) for _ in range(cfg['NUM_ACTORS'])]
     )
 
-    # Get dimensions from the vector environment's observation/action spaces
-    state_dim = envs.single_observation_space.shape[0]
-    action_dim = envs.single_action_space.n
-
-    agent = PPOAgent(state_dim, action_dim, cfg)
+    agent = PPOAgent(state_dim, action_dim, cfg, is_continuous=is_continuous)
 
     # Create directories for saving models
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -116,8 +141,16 @@ def train_agent(cfg):
     # Save the configuration dictionary as a JSON file
     config_path = os.path.join(model_dir, "config.json")
     try:
+        # Add action space info to config before saving
+        cfg_to_save = cfg.copy()
+        cfg_to_save['is_continuous'] = is_continuous
+        cfg_to_save['action_dim'] = int(action_dim)
+        if is_continuous:
+            cfg_to_save['action_low'] = action_low.tolist() # Convert numpy arrays for JSON
+            cfg_to_save['action_high'] = action_high.tolist()
+
         with open(config_path, 'w') as f:
-            json.dump(cfg, f, indent=4)
+            json.dump(cfg_to_save, f, indent=4)
         print(f"Configuration saved to {config_path}")
     except Exception as e:
         print(f"Error saving configuration to {config_path}: {e}")
@@ -181,7 +214,7 @@ def train_agent(cfg):
         # --- Evaluation Phase ---
         if global_episode_count > 0: # Evaluate after some episodes have finished
             # Use the single-env evaluation function
-            avg_eval_reward = evaluate_agent(cfg['ENV_NAME'], agent, cfg['EVAL_EPISODES'], cfg['DEVICE'])
+            avg_eval_reward = evaluate_agent(cfg['ENV_NAME'], agent, cfg['EVAL_EPISODES'], cfg['DEVICE'], is_continuous)
             print(f"Evaluation after {total_steps} steps ({global_episode_count} episodes): Average Reward = {avg_eval_reward:.2f}")
 
             # Save the model if it's the best so far
@@ -192,8 +225,8 @@ def train_agent(cfg):
 
                 # Generate renders if requested
                 if cfg.get('RENDER', False):
-                    render_save_dir = os.path.join(model_dir, "renders", f"{avg_eval_reward:.2f}")
-                    generate_renders(cfg['ENV_NAME'], agent, 3, render_save_dir, cfg['DEVICE'])
+                    render_save_dir = os.path.join(model_dir, "renders", f"{avg_eval_reward:.3f}")
+                    generate_renders(cfg['ENV_NAME'], agent, 3, render_save_dir, cfg['DEVICE'], is_continuous)
             
             # Check goal reward
             if best_eval_reward >= cfg['GOAL_REWARD']:
@@ -208,16 +241,16 @@ def train_agent(cfg):
     if os.path.exists(best_model_path):
         print(f"Loading best model for final evaluation.")
 
-        best_agent = PPOAgent(state_dim, action_dim, cfg)
+        best_agent = PPOAgent(state_dim, action_dim, cfg, is_continuous=is_continuous)
         best_agent.load_model(best_model_path)
         # Evaluate using the single-env evaluator
-        final_avg_reward = evaluate_agent(cfg['ENV_NAME'], best_agent, cfg['TEST_EPISODES'], cfg['DEVICE'])
+        final_avg_reward = evaluate_agent(cfg['ENV_NAME'], best_agent, cfg['TEST_EPISODES'], cfg['DEVICE'], is_continuous)
         print(f"Final Evaluation (Best Model): Average Reward over {cfg['TEST_EPISODES']} episodes = {final_avg_reward:.2f}")
 
     else:
         print("No best model was saved during training. Evaluating current agent state.")
         # Evaluate the final state of the training agent using the single-env evaluator
-        final_avg_reward = evaluate_agent(cfg['ENV_NAME'], agent, cfg['TEST_EPISODES'], cfg['DEVICE'])
+        final_avg_reward = evaluate_agent(cfg['ENV_NAME'], agent, cfg['TEST_EPISODES'], cfg['DEVICE'], is_continuous)
         print(f"Final Evaluation (Current Agent): Average Reward = {final_avg_reward:.2f}")
 
 
