@@ -7,6 +7,8 @@ from agent import PPOAgent
 from gymnasium.wrappers import RecordVideo, ClipAction
 import glob
 import json
+import pandas as pd
+import matplotlib.pyplot as plt
 
 def evaluate_agent(env_name, agent, eval_episodes, device, is_continuous):
     """Evaluates the agent over a number of episodes using a single environment."""
@@ -136,7 +138,12 @@ def train_agent(cfg):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     model_dir = os.path.join("ppo_models", f"ppo_{cfg['ENV_NAME']}_{timestamp}")
     os.makedirs(model_dir, exist_ok=True)
-    print(f"Models, config, and renders will be saved in: {model_dir}")
+    print(f"Models and config will be saved in: {model_dir}")
+
+    # Create results directory for this run
+    results_dir = os.path.join("results", f"ppo_{cfg['ENV_NAME']}_{timestamp}")
+    os.makedirs(results_dir, exist_ok=True)
+    print(f"Evaluation results, plots and renders will be saved in: {results_dir}")
 
     # Save the configuration dictionary as a JSON file
     config_path = os.path.join(model_dir, "config.json")
@@ -158,6 +165,7 @@ def train_agent(cfg):
     total_steps = 0
     global_episode_count = 0 # Track total episodes across all actors
     best_eval_reward = -np.inf
+    evaluation_log = [] # Initialize list to store evaluation results
 
     # --- Training Loop ---
     # Reset all environments and get initial states
@@ -217,6 +225,9 @@ def train_agent(cfg):
             avg_eval_reward = evaluate_agent(cfg['ENV_NAME'], agent, cfg['EVAL_EPISODES'], cfg['DEVICE'], is_continuous)
             print(f"Evaluation after {total_steps} steps ({global_episode_count} episodes): Average Reward = {avg_eval_reward:.2f}")
 
+            # Log the evaluation result
+            evaluation_log.append({'steps': total_steps, 'average_reward': avg_eval_reward})
+
             # Save the model if it's the best so far
             if avg_eval_reward > best_eval_reward and (total_steps >= cfg['NUM_STEPS'] * 0.1 or avg_eval_reward >= cfg['GOAL_REWARD']):
                 best_eval_reward = avg_eval_reward
@@ -225,7 +236,7 @@ def train_agent(cfg):
 
                 # Generate renders if requested
                 if cfg.get('RENDER', False):
-                    render_save_dir = os.path.join(model_dir, "renders", f"{avg_eval_reward:.3f}")
+                    render_save_dir = os.path.join(results_dir, "renders", f"{avg_eval_reward:.3f}")
                     generate_renders(cfg['ENV_NAME'], agent, 3, render_save_dir, cfg['DEVICE'], is_continuous)
             
             # Check goal reward
@@ -236,6 +247,39 @@ def train_agent(cfg):
 
     # --- Final Evaluation & Saving ---
     print("\nTraining complete.")
+
+    # --- Save Evaluation Log and Plot ---
+    if evaluation_log:
+        log_df = pd.DataFrame(evaluation_log)
+        csv_path = os.path.join(results_dir, "evaluation_log.csv")
+        plot_path = os.path.join(results_dir, "evaluation_plot.png")
+
+        try:
+            # Save log to CSV
+            log_df.to_csv(csv_path, index=False)
+            print(f"Evaluation log saved to {csv_path}")
+
+            # Generate and save plot
+            plt.figure(figsize=(10, 6))
+            plt.plot(log_df['steps'], log_df['average_reward'], marker='o')
+            plt.title(f"PPO Training Performance - {cfg['ENV_NAME']}")
+            plt.xlabel("Training Steps")
+            plt.ylabel("Average Evaluation Reward")
+            plt.grid(True)
+            plt.tight_layout()
+            plt.savefig(plot_path)
+            plt.close() # Close the plot to free memory
+            print(f"Evaluation plot saved to {plot_path}")
+
+        except Exception as e:
+            print(f"Error saving evaluation log or plot: {e}")
+
+    # --- Save Loss Logs ---
+    try:
+        agent.ppo_algorithm.save_loss_logs(results_dir)
+    except Exception as e:
+        print(f"Error calling save_loss_logs: {e}")
+
     # Load the best model for final evaluation
     best_model_path = os.path.join(model_dir, f"ppo_{cfg['ENV_NAME']}_{timestamp}.pth")
     if os.path.exists(best_model_path):
