@@ -16,6 +16,7 @@ class PPOMemory:
         self.device = cfg['DEVICE']
         self.gamma = cfg['GAMMA']
         self.gae_lambda = cfg['GAE_LAMBDA']
+        self.normalize_advantages = cfg['NORMALIZE_ADVANTAGES']
         self.is_continuous = is_continuous # Store action space type
 
     def store_memory(self, state, action, log_prob, reward, value, done):
@@ -112,7 +113,8 @@ class PPOMemory:
 
 
         # --- Normalize advantages ---
-        advantages_tensor = (advantages_tensor - advantages_tensor.mean()) / (advantages_tensor.std() + 1e-8)
+        if self.normalize_advantages:
+            advantages_tensor = (advantages_tensor - advantages_tensor.mean()) / (advantages_tensor.std() + 1e-8)
 
         # --- Generate batch indices ---
         batch_start = np.arange(0, n_states, self.batch_size)

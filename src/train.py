@@ -164,6 +164,7 @@ def train_agent(cfg):
 
     total_steps = 0
     global_episode_count = 0 # Track total episodes across all actors
+    update_cycle_count = 0 # Track evaluation/update cycles
     best_eval_reward = -np.inf
     evaluation_log = [] # Initialize list to store evaluation results
 
@@ -226,7 +227,8 @@ def train_agent(cfg):
             print(f"Evaluation after {total_steps} steps ({global_episode_count} episodes): Average Reward = {avg_eval_reward:.2f}")
 
             # Log the evaluation result
-            evaluation_log.append({'steps': total_steps, 'average_reward': avg_eval_reward})
+            evaluation_log.append({'steps': total_steps, 'update_cycle': update_cycle_count, 'average_reward': avg_eval_reward})
+            update_cycle_count += 1
 
             # Save the model if it's the best so far
             if avg_eval_reward > best_eval_reward and (total_steps >= cfg['NUM_STEPS'] * 0.1 or avg_eval_reward >= cfg['GOAL_REWARD']):
@@ -261,9 +263,9 @@ def train_agent(cfg):
 
             # Generate and save plot
             plt.figure(figsize=(10, 6))
-            plt.plot(log_df['steps'], log_df['average_reward'], marker='o')
+            plt.plot(log_df['update_cycle'], log_df['average_reward'], marker='o')
             plt.title(f"PPO Training Performance - {cfg['ENV_NAME']}")
-            plt.xlabel("Training Steps")
+            plt.xlabel("Update Cycle")
             plt.ylabel("Average Evaluation Reward")
             plt.grid(True)
             plt.tight_layout()

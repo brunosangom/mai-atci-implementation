@@ -12,9 +12,10 @@ CARTPOLE_CONFIG = {
     'GAMMA': 0.99,
     'GAE_LAMBDA': 0.95,
     'PPO_EPSILON': 0.2,
-    'CRITIC_DISCOUNT': 0.5,
+    'CRITIC_DISCOUNT': 0.1,
     'ENTROPY_BETA': 0.01,
     'HIDDEN_SIZE': 64,
+    'NORMALIZE_ADVANTAGES': True,
 
     'LEARNING_RATE': 3e-4,
     'PPO_STEPS': 256, # Number of steps to collect in each environment per update
@@ -23,7 +24,7 @@ CARTPOLE_CONFIG = {
     'PPO_EPOCHS': 10, # Number of epochs to update the policy per learning cycle
 
     'NUM_STEPS': 30000, # Total number of steps to train the agent
-    'EVAL_EPISODES': 20, # Average over this many episodes for evaluation
+    'EVAL_EPISODES': 10, # Average over this many episodes for evaluation
     'TEST_EPISODES': 25, # Number of episodes to test the agent after training
 
     'RENDER': RENDER,
@@ -41,6 +42,7 @@ ACROBOT_CONFIG = {
     'CRITIC_DISCOUNT': 0.5,
     'ENTROPY_BETA': 0.01,
     'HIDDEN_SIZE': 64,
+    'NORMALIZE_ADVANTAGES': False,
 
     'LEARNING_RATE': 3e-4,
     'PPO_STEPS': 256,
@@ -67,6 +69,7 @@ MCC_CONFIG = {
     'CRITIC_DISCOUNT': 0.5,
     'ENTROPY_BETA': 0.01,
     'HIDDEN_SIZE': 64,
+    'NORMALIZE_ADVANTAGES': False,
 
     'LEARNING_RATE': 3e-4,
     'PPO_STEPS': 256,
@@ -75,7 +78,7 @@ MCC_CONFIG = {
     'PPO_EPOCHS': 10,
 
     'NUM_STEPS': 30000,
-    'EVAL_EPISODES': 20,
+    'EVAL_EPISODES': 10,
     'TEST_EPISODES': 25,
 
     'RENDER': RENDER,
