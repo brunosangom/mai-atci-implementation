@@ -2,8 +2,8 @@ from train import train_agent
 from config import CONFIGS
 
 # --- Environment Selection ---
-ENVIRONMENTS = ["CartPole-v1", "Acrobot-v1", "MountainCarContinuous-v0"]
-SELECTED_ENV = ENVIRONMENTS[0]
+ENVIRONMENTS = ["CartPole-v1", "HalfCheetah-v5", "MountainCarContinuous-v0"]
+SELECTED_ENV = ENVIRONMENTS[1]
 
 # --- Main Execution ---
 if __name__ == "__main__":

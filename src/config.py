@@ -16,6 +16,7 @@ CARTPOLE_CONFIG = {
     'ENTROPY_BETA': 0.01,
     'HIDDEN_SIZE': 64,
     'NORMALIZE_ADVANTAGES': True,
+    'SHARED_FEATURES': True, # Use shared features for actor and critic
 
     'LEARNING_RATE': 3e-4,
     'PPO_STEPS': 256, # Number of steps to collect in each environment per update
@@ -31,28 +32,29 @@ CARTPOLE_CONFIG = {
     'DEVICE': DEVICE,
 }
 
-# --- Acrobot-v1 Configuration ---
-ACROBOT_CONFIG = {
-    'ENV_NAME': "Acrobot-v1",
-    'GOAL_REWARD': -100.0,
+# --- HalfCheetah-v5 Configuration ---
+CHEETAH_CONFIG = {
+    'ENV_NAME': "HalfCheetah-v5",
+    'GOAL_REWARD': 10000.0,
 
     'GAMMA': 0.99,
     'GAE_LAMBDA': 0.95,
     'PPO_EPSILON': 0.2,
-    'CRITIC_DISCOUNT': 0.5,
-    'ENTROPY_BETA': 0.01,
+    'CRITIC_DISCOUNT': 1,
+    'ENTROPY_BETA': 0, # Do not use entropy bonus
     'HIDDEN_SIZE': 64,
     'NORMALIZE_ADVANTAGES': False,
+    'SHARED_FEATURES': False,
 
     'LEARNING_RATE': 3e-4,
-    'PPO_STEPS': 256,
-    'NUM_ACTORS': 16,
-    'MINI_BATCH_SIZE': 128,
-    'PPO_EPOCHS': 4,
+    'PPO_STEPS': 2048,
+    'NUM_ACTORS': 1,
+    'MINI_BATCH_SIZE': 64,
+    'PPO_EPOCHS': 10,
 
-    'NUM_STEPS': 100000,
-    'EVAL_EPISODES': 10,
-    'TEST_EPISODES': 25,
+    'NUM_STEPS': 1000000,
+    'EVAL_EPISODES': 0,
+    'TEST_EPISODES': 100,
 
     'RENDER': RENDER,
     'DEVICE': DEVICE,
@@ -69,7 +71,8 @@ MCC_CONFIG = {
     'CRITIC_DISCOUNT': 0.5,
     'ENTROPY_BETA': 0.01,
     'HIDDEN_SIZE': 64,
-    'NORMALIZE_ADVANTAGES': False,
+    'NORMALIZE_ADVANTAGES': True,
+    'SHARED_FEATURES': True,
 
     'LEARNING_RATE': 3e-4,
     'PPO_STEPS': 256,
@@ -87,6 +90,6 @@ MCC_CONFIG = {
 
 CONFIGS = {
     "CartPole-v1": CARTPOLE_CONFIG,
+    "HalfCheetah-v5": CHEETAH_CONFIG,
     "MountainCarContinuous-v0": MCC_CONFIG,
-    "Acrobot-v1": ACROBOT_CONFIG,
 }

@@ -8,29 +8,48 @@ class ActorCritic(nn.Module):
     Actor-Critic Network for PPO.
     Handles both discrete (Categorical) and continuous (Normal) action spaces.
     """
-    def __init__(self, state_dim, action_dim, hidden_dim, is_continuous=False):
+    def __init__(self, state_dim, action_dim, hidden_dim, is_continuous=False, shared_features=False):
         super(ActorCritic, self).__init__()
         self.is_continuous = is_continuous
         self.action_dim = action_dim
+        self.shared_features = shared_features
 
-        self.shared_layer = nn.Sequential(
-            nn.Linear(state_dim, hidden_dim),
-            nn.ReLU()
-        )
+        if shared_features:
+            # Shared layer for both actor and critic
+            self.shared_layer = nn.Sequential(
+                nn.Linear(state_dim, hidden_dim),
+                nn.Tanh()
+            )
 
-        # Actor head
-        self.actor_head = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, action_dim) # Outputs logits for discrete, mu for continuous
-        )
+            # Actor head
+            self.actor_head = nn.Sequential(
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.Tanh(),
+                nn.Linear(hidden_dim, action_dim) # Outputs logits for discrete, mu for continuous
+            )
 
-        # Critic head: outputs state value
-        self.critic_head = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, 1)
-        )
+            # Critic head: outputs state value
+            self.critic_head = nn.Sequential(
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.Tanh(),
+                nn.Linear(hidden_dim, 1)
+            )
+        else:
+            # Separate layers for actor and critic
+            self.actor_net = nn.Sequential(
+                nn.Linear(state_dim, hidden_dim),
+                nn.Tanh(),
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.Tanh(),
+                nn.Linear(hidden_dim, action_dim) # Outputs logits for discrete, mu for continuous
+            )
+            self.critic_net = nn.Sequential(
+                nn.Linear(state_dim, hidden_dim),
+                nn.Tanh(),
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.Tanh(),
+                nn.Linear(hidden_dim, 1)
+            )
 
         # Learnable parameter for log standard deviation (for continuous actions)
         if self.is_continuous:
@@ -46,9 +65,13 @@ class ActorCritic(nn.Module):
             actor_output: Action logits (discrete) or action mean (continuous).
             state_value: Estimated value of the state (from Critic).
         """
-        shared_features = self.shared_layer(state)
-        actor_output = self.actor_head(shared_features)
-        state_value = self.critic_head(shared_features)
+        if self.shared_features:
+            shared_features = self.shared_layer(state)
+            actor_output = self.actor_head(shared_features)
+            state_value = self.critic_head(shared_features)
+        else:
+            actor_output = self.actor_net(state)
+            state_value = self.critic_net(state)
         return actor_output, state_value
 
     def _get_distribution(self, actor_output):

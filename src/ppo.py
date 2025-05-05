@@ -47,15 +47,17 @@ class PPOAlgorithm:
 
                 # Critic loss (Value loss)
                 critic_loss = (new_values - batch_returns).pow(2).mean()
-                discounted_critic_loss = self.cfg['CRITIC_DISCOUNT'] * critic_loss
+                if self.cfg['SHARED_FEATURES']:
+                    # If using shared features, apply discount to critic loss
+                    critic_loss = self.cfg['CRITIC_DISCOUNT'] * critic_loss
                 entropy_loss = self.cfg['ENTROPY_BETA'] * entropy
 
                 # Store batch losses (before weighting)
                 update_actor_losses.append(actor_loss.item())
-                update_critic_losses.append(discounted_critic_loss.item())
+                update_critic_losses.append(critic_loss.item())
 
                 # Total loss
-                loss = actor_loss + discounted_critic_loss - entropy_loss
+                loss = actor_loss + critic_loss - entropy_loss
 
                 # Perform optimization step
                 self.optimizer.zero_grad()
@@ -69,7 +71,7 @@ class PPOAlgorithm:
             self.critic_loss_log.append(np.mean(update_critic_losses))
 
     def save_loss_logs(self, results_dir):
-        """Saves the logged actor loss and discounted critic loss to a CSV and generates a plot."""
+        """Saves the logged actor loss and critic loss to a CSV and generates a plot."""
         # Check if all logs have data
         if not self.actor_loss_log or not self.critic_loss_log:
             print("No loss/entropy data logged, skipping saving logs.")

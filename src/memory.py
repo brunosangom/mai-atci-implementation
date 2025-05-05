@@ -96,8 +96,12 @@ class PPOMemory:
             actor_rewards = rewards_tensor[i] # Shape (ppo_steps,)
             actor_values = values_tensor[i]   # Shape (ppo_steps,)
             actor_dones = dones_tensor[i]     # Shape (ppo_steps,)
-            actor_next_value = next_values_tensor[i] # Scalar tensor
-            actor_last_done = last_dones_tensor[i]   # Scalar tensor
+            if self.num_actors > 1:
+                actor_next_value = next_values_tensor[i] # Scalar tensor
+                actor_last_done = last_dones_tensor[i]   # Scalar tensor
+            else:
+                actor_next_value = next_values_tensor.item()
+                actor_last_done = last_dones_tensor.item()
 
             # Calculate GAE and returns for this actor
             advantages_i, returns_i = self._calculate_gae(
@@ -132,7 +136,10 @@ class PPOMemory:
         last_advantage = 0.0
 
         # Bootstrap value V(s_T) - use next_value if the episode didn't end at the last step
-        last_value = next_value * (1.0 - last_done.float())
+        if self.num_actors > 1:
+            last_value = next_value * (1.0 - last_done.float())
+        else:
+            last_value = next_value * (1.0 - last_done)
 
         # Calculate advantages and returns backwards
         for t in reversed(range(n_steps)):

@@ -1,8 +1,8 @@
-gymnasium[box2d]
 torch
 numpy
 moviepy
 pandas # Added pandas
 matplotlib # Added matplotlib
 gymnasium[classic_control]
+gymnasium[mujoco]
 gymnasium[other]

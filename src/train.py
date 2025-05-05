@@ -146,7 +146,8 @@ def train_agent(cfg):
     print(f"Evaluation results, plots and renders will be saved in: {results_dir}")
 
     # Save the configuration dictionary as a JSON file
-    config_path = os.path.join(model_dir, "config.json")
+    config_path_1 = os.path.join(model_dir, "config.json")
+    config_path_2 = os.path.join(results_dir, "config.json")
     try:
         # Add action space info to config before saving
         cfg_to_save = cfg.copy()
@@ -156,16 +157,22 @@ def train_agent(cfg):
             cfg_to_save['action_low'] = action_low.tolist() # Convert numpy arrays for JSON
             cfg_to_save['action_high'] = action_high.tolist()
 
-        with open(config_path, 'w') as f:
+        with open(config_path_1, 'w') as f:
             json.dump(cfg_to_save, f, indent=4)
-        print(f"Configuration saved to {config_path}")
+        print(f"Configuration saved to {config_path_1}")
+        with open(config_path_2, 'w') as f:
+            json.dump(cfg_to_save, f, indent=4)
+        print(f"Configuration saved to {config_path_2}")
     except Exception as e:
-        print(f"Error saving configuration to {config_path}: {e}")
+        print(f"Error saving configuration to {config_path_1}: {e}")
 
     total_steps = 0
     global_episode_count = 0 # Track total episodes across all actors
+    episode_rewards_log = [] # Store rewards for each episode
     update_cycle_count = 0 # Track evaluation/update cycles
     best_eval_reward = -np.inf
+
+    training_log = [] # Initialize list to store training progress
     evaluation_log = [] # Initialize list to store evaluation results
 
     # --- Training Loop ---
@@ -174,6 +181,8 @@ def train_agent(cfg):
 
     while total_steps < cfg['NUM_STEPS']:
         # --- Data Collection Phase ---
+        cycle_rewards = []
+        episode_rewards = np.zeros(cfg['NUM_ACTORS'])
         # Collect PPO_STEPS * NUM_ACTORS transitions in total per cycle
         for step in range(cfg['PPO_STEPS']):
             # Select actions for the batch of states
@@ -182,6 +191,7 @@ def train_agent(cfg):
             # Step the parallel environments
             next_states, rewards, terminateds, truncateds, _ = envs.step(actions)
             dones = np.logical_or(terminateds, truncateds) # Combine termination conditions
+            episode_rewards += rewards
 
             # Store transitions for each actor
             for i in range(cfg['NUM_ACTORS']):
@@ -194,15 +204,21 @@ def train_agent(cfg):
                 done = dones[i]
 
                 agent.store_transition(state, action, log_prob, reward, value, done)
+                cycle_rewards.append(reward)
 
                 # If an episode finished in one of the environments
                 if done:
+                    episode_rewards_log.append(episode_rewards[i])
+                    episode_rewards[i] = 0
                     global_episode_count += 1
                     # Resetting the env is handled automatically by AsyncVectorEnv
 
             # Update states for the next iteration
             states = next_states
             total_steps += cfg['NUM_ACTORS'] # Increment by the number of actors
+
+        training_log.append({'steps': total_steps, 'average_reward':np.mean(cycle_rewards)}) # Log the average reward for this cycle
+        print(f"Training step {total_steps} / {cfg['NUM_STEPS']} (Episodes: {global_episode_count}): Average Reward for this cycle = {np.mean(cycle_rewards):.2f}")
 
         # --- Learning Phase ---
         # Bootstrap value estimation for the last states from each actor
@@ -221,7 +237,7 @@ def train_agent(cfg):
         agent.learn(next_values, last_dones)
 
         # --- Evaluation Phase ---
-        if global_episode_count > 0: # Evaluate after some episodes have finished
+        if cfg['EVAL_EPISODES'] > 0:
             # Use the single-env evaluation function
             avg_eval_reward = evaluate_agent(cfg['ENV_NAME'], agent, cfg['EVAL_EPISODES'], cfg['DEVICE'], is_continuous)
             print(f"Evaluation after {total_steps} steps ({global_episode_count} episodes): Average Reward = {avg_eval_reward:.2f}")
@@ -249,8 +265,63 @@ def train_agent(cfg):
 
     # --- Final Evaluation & Saving ---
     print("\nTraining complete.")
+    print(f"Average reward over the last 100 training episodes: {np.mean(episode_rewards_log[-100:]):.2f}")
 
-    # --- Save Evaluation Log and Plot ---
+    # --- Save Logs and Plots ---
+    if episode_rewards_log:
+        rewards_log_df = pd.DataFrame({
+            'episode': range(1, len(episode_rewards_log) + 1),
+            'reward': episode_rewards_log
+        })
+        csv_path = os.path.join(results_dir, "rewards_log.csv")
+        plot_path = os.path.join(results_dir, "rewards_plot.png")
+
+        try:
+            # Save log to CSV
+            rewards_log_df.to_csv(csv_path, index=False)
+            print(f"Rewards log saved to {csv_path}")
+
+            # Generate and save plot
+            plt.figure(figsize=(10, 6))
+            plt.plot(rewards_log_df['episode'], rewards_log_df['reward'], marker=None)
+            plt.title(f"PPO Rewards over episodes - {cfg['ENV_NAME']}")
+            plt.xlabel("Episode")
+            plt.ylabel("Reward")
+            plt.grid(True)
+            plt.tight_layout()
+            plt.savefig(plot_path)
+            plt.close() # Close the plot to free memory
+            print(f"Rewards plot saved to {plot_path}")
+
+        except Exception as e:
+            print(f"Error saving rewards log or plot: {e}")
+
+
+    if training_log:
+        log_df = pd.DataFrame(training_log)
+        csv_path = os.path.join(results_dir, "training_log.csv")
+        plot_path = os.path.join(results_dir, "training_plot.png")
+
+        try:
+            # Save log to CSV
+            log_df.to_csv(csv_path, index=False)
+            print(f"Training log saved to {csv_path}")
+
+            # Generate and save plot
+            plt.figure(figsize=(10, 6))
+            plt.plot(log_df['steps'], log_df['average_reward'], marker=None)
+            plt.title(f"PPO Training Performance - {cfg['ENV_NAME']}")
+            plt.xlabel("Steps")
+            plt.ylabel("Average Training Reward")
+            plt.grid(True)
+            plt.tight_layout()
+            plt.savefig(plot_path)
+            plt.close() # Close the plot to free memory
+            print(f"Training plot saved to {plot_path}")
+
+        except Exception as e:
+            print(f"Error saving training log or plot: {e}")
+    
     if evaluation_log:
         log_df = pd.DataFrame(evaluation_log)
         csv_path = os.path.join(results_dir, "evaluation_log.csv")
@@ -263,8 +334,8 @@ def train_agent(cfg):
 
             # Generate and save plot
             plt.figure(figsize=(10, 6))
-            plt.plot(log_df['update_cycle'], log_df['average_reward'], marker='o')
-            plt.title(f"PPO Training Performance - {cfg['ENV_NAME']}")
+            plt.plot(log_df['update_cycle'], log_df['average_reward'], marker=None)
+            plt.title(f"PPO Evaluation Performance - {cfg['ENV_NAME']}")
             plt.xlabel("Update Cycle")
             plt.ylabel("Average Evaluation Reward")
             plt.grid(True)
@@ -294,7 +365,13 @@ def train_agent(cfg):
         print(f"Final Evaluation (Best Model): Average Reward over {cfg['TEST_EPISODES']} episodes = {final_avg_reward:.2f}")
 
     else:
+        save_path = os.path.join(model_dir, f"ppo_{cfg['ENV_NAME']}_{timestamp}.pth")
+        agent.save_model(save_path)
         print("No best model was saved during training. Evaluating current agent state.")
+        # Generate renders if requested
+        if cfg['RENDER']:
+            render_save_dir = os.path.join(results_dir, "renders", "final")
+            generate_renders(cfg['ENV_NAME'], agent, 3, render_save_dir, cfg['DEVICE'], is_continuous)
         # Evaluate the final state of the training agent using the single-env evaluator
         final_avg_reward = evaluate_agent(cfg['ENV_NAME'], agent, cfg['TEST_EPISODES'], cfg['DEVICE'], is_continuous)
         print(f"Final Evaluation (Current Agent): Average Reward = {final_avg_reward:.2f}")
