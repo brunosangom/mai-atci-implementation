@@ -24,8 +24,8 @@ CARTPOLE_CONFIG = {
     'MINI_BATCH_SIZE': 64, # Size of mini-batches for update
     'PPO_EPOCHS': 10, # Number of epochs to update the policy per learning cycle
 
-    'NUM_STEPS': 30000, # Total number of steps to train the agent
-    'EVAL_EPISODES': 10, # Average over this many episodes for evaluation
+    'NUM_STEPS': 20000, # Total number of steps to train the agent
+    'EVAL_EPISODES': 0, # Average over this many episodes for evaluation
     'TEST_EPISODES': 25, # Number of episodes to test the agent after training
 
     'RENDER': RENDER,
@@ -60,29 +60,29 @@ CHEETAH_CONFIG = {
     'DEVICE': DEVICE,
 }
 
-# --- MountainCarContinuous-v0 Configuration ---
-MCC_CONFIG = {
-    'ENV_NAME': "MountainCarContinuous-v0",
-    'GOAL_REWARD': 90.0,
+# --- Reacher-v5 Configuration ---
+REACHER_CONFIG = {
+    'ENV_NAME': "Reacher-v5",
+    'GOAL_REWARD': -10.0,
 
     'GAMMA': 0.99,
     'GAE_LAMBDA': 0.95,
     'PPO_EPSILON': 0.2,
-    'CRITIC_DISCOUNT': 0.5,
-    'ENTROPY_BETA': 0.01,
+    'CRITIC_DISCOUNT': 1,
+    'ENTROPY_BETA': 0, # Do not use entropy bonus
     'HIDDEN_SIZE': 64,
-    'NORMALIZE_ADVANTAGES': True,
-    'SHARED_FEATURES': True,
+    'NORMALIZE_ADVANTAGES': False,
+    'SHARED_FEATURES': False,
 
     'LEARNING_RATE': 3e-4,
-    'PPO_STEPS': 256,
-    'NUM_ACTORS': 2,
+    'PPO_STEPS': 2048,
+    'NUM_ACTORS': 1,
     'MINI_BATCH_SIZE': 64,
     'PPO_EPOCHS': 10,
 
-    'NUM_STEPS': 30000,
-    'EVAL_EPISODES': 10,
-    'TEST_EPISODES': 25,
+    'NUM_STEPS': 1000000,
+    'EVAL_EPISODES': 0,
+    'TEST_EPISODES': 100,
 
     'RENDER': RENDER,
     'DEVICE': DEVICE,
@@ -91,5 +91,5 @@ MCC_CONFIG = {
 CONFIGS = {
     "CartPole-v1": CARTPOLE_CONFIG,
     "HalfCheetah-v5": CHEETAH_CONFIG,
-    "MountainCarContinuous-v0": MCC_CONFIG,
+    "Reacher-v5": REACHER_CONFIG,
 }
