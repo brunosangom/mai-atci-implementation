@@ -26,7 +26,7 @@ class PPOAgent:
         # states is expected to be a numpy array (num_actors, state_dim)
         states_tensor = torch.tensor(states, dtype=torch.float).to(self.cfg['DEVICE'])
         with torch.no_grad():
-            actions, log_probs, values = self.actor_critic.act(states_tensor)
+            actions, log_probs, values = self.actor_critic.act(states_tensor, update_rms=True)
             
         return actions.cpu().numpy(), log_probs.cpu().numpy(), values.cpu().numpy() # Return batch values
 
