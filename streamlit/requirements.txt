@@ -1,8 +1,0 @@
-torch
-numpy
-pandas
-matplotlib
-gymnasium[classic_control]
-gymnasium[mujoco]
-gymnasium[other]
-streamlit

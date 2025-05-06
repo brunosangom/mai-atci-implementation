@@ -1,5 +1,13 @@
 import streamlit as st
 import os
+
+# Attempt to set MUJOCO_GL to osmesa for headless rendering if it's not already set.
+# This is a potential workaround for GLFW errors on headless servers if OSMesa is available.
+# It should be set before gymnasium or mujoco is imported if they auto-initialize GL.
+if 'MUJOCO_GL' not in os.environ:
+    print("Streamlit App: Attempting to set MUJOCO_GL=osmesa for headless MuJoCo rendering.")
+    os.environ['MUJOCO_GL'] = 'osmesa'
+
 import sys
 import glob
 import json
@@ -74,7 +82,7 @@ def load_agent_from_model_dir(model_dir_path):
     
     # Ensure DEVICE is sensible for Streamlit context, fallback to CPU if not available
     if 'DEVICE' not in agent_config or (agent_config['DEVICE'] == 'cuda' and not torch.cuda.is_available()):
-        st.warning(f"Device in config was {agent_config.get('DEVICE')}, but falling back to CPU.")
+        # st.warning(f"Device in config was {agent_config.get('DEVICE')}, but falling back to CPU.")
         agent_config['DEVICE'] = "cpu"
     
     # PPOAgent constructor uses the full agent_config dictionary.
@@ -181,11 +189,11 @@ selected_env = st.selectbox("Choose an Environment", env_names)
 if st.button("Generate and Visualize Episode", key="generate_button"):
     if selected_env:
         with st.spinner(f"Processing for {selected_env}..."):
-            st.info(f"Searching for the latest model for {selected_env} in {MODELS_BASE_DIR}...")
+            # st.info(f"Searching for the latest model for {selected_env} in {MODELS_BASE_DIR}...")
             latest_model_dir = find_latest_model_dir(selected_env)
 
             if latest_model_dir:
-                st.success(f"Found model directory: {os.path.basename(latest_model_dir)}")
+                # st.success(f"Found model directory: {os.path.basename(latest_model_dir)}")
                 try:
                     agent, agent_config = load_agent_from_model_dir(latest_model_dir)
                     st.info(f"Agent loaded successfully using device: {agent_config['DEVICE']}. Generating video render...")
@@ -220,8 +228,8 @@ if st.button("Generate and Visualize Episode", key="generate_button"):
         st.warning("Please select an environment.")
 
 st.markdown("---")
-st.markdown(f"Models are loaded from: `{MODELS_BASE_DIR}`")
-st.markdown(f"Renders are saved to: `{STREAMLIT_RENDERS_DIR}`")
+# st.markdown(f"Models are loaded from: `{MODELS_BASE_DIR}`")
+# st.markdown(f"Renders are saved to: `{STREAMLIT_RENDERS_DIR}`")
 
 # To run this Streamlit app:
 # 1. Ensure you are in the 'mai-atci-implementation' directory.
