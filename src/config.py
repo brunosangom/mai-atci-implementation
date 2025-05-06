@@ -88,8 +88,37 @@ REACHER_CONFIG = {
     'DEVICE': DEVICE,
 }
 
+# --- Walker2d-v5 Configuration ---
+WALKER_CONFIG = {
+    'ENV_NAME': "Walker2d-v5",
+    'GOAL_REWARD': 3000.0,
+
+    'GAMMA': 0.99,
+    'GAE_LAMBDA': 0.95,
+    'PPO_EPSILON': 0.2,
+    'CRITIC_DISCOUNT': 1,
+    'ENTROPY_BETA': 0, # Do not use entropy bonus
+    'HIDDEN_SIZE': 64,
+    'NORMALIZE_ADVANTAGES': False,
+    'SHARED_FEATURES': False,
+
+    'LEARNING_RATE': 3e-4,
+    'PPO_STEPS': 2048,
+    'NUM_ACTORS': 1,
+    'MINI_BATCH_SIZE': 64,
+    'PPO_EPOCHS': 10,
+
+    'NUM_STEPS': 1000000,
+    'EVAL_EPISODES': 0,
+    'TEST_EPISODES': 100,
+
+    'RENDER': RENDER,
+    'DEVICE': DEVICE,
+}
+
 CONFIGS = {
     "CartPole-v1": CARTPOLE_CONFIG,
     "HalfCheetah-v5": CHEETAH_CONFIG,
     "Reacher-v5": REACHER_CONFIG,
+    "Walker2d-v5": WALKER_CONFIG
 }
