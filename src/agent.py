@@ -1,8 +1,8 @@
 import torch
 import numpy as np
-from models import ActorCritic
-from memory import PPOMemory
-from ppo import PPOAlgorithm
+from .models import ActorCritic
+from .memory import PPOMemory
+from .ppo import PPOAlgorithm
 
 class PPOAgent:
     """Agent that interacts with the environment and learns using PPO."""
