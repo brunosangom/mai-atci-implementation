@@ -1,0 +1,2 @@
+freeglut3-dev
+libosmesa6-dev
