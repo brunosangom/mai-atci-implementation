@@ -130,7 +130,7 @@ def generate_streamlit_render(env_name, agent, agent_config, save_dir_base):
             state_tensor = torch.tensor(state_np, dtype=torch.float).to(device)
             
             with torch.no_grad():
-                action_tensor, _ = agent.actor_critic.act(state_tensor, update_rms=False)
+                action_tensor = agent.actor_critic.act(state_tensor, update_rms=False)[0]
                 action = action_tensor.cpu().numpy()
                 action = action[0] if is_continuous else action.item() # Adjust for batch dim if present
 
