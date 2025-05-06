@@ -3,7 +3,7 @@ import torch
 import numpy as np
 import os
 from datetime import datetime
-from agent import PPOAgent
+from .agent import PPOAgent
 from gymnasium.wrappers import RecordVideo, ClipAction
 import glob
 import json

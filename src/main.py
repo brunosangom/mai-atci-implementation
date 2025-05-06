@@ -1,9 +1,9 @@
-from train import train_agent
-from config import CONFIGS
+from .train import train_agent
+from .config import CONFIGS
 
 # --- Environment Selection ---
 ENVIRONMENTS = ["CartPole-v1", "HalfCheetah-v5", "Reacher-v5"]
-SELECTED_ENV = ENVIRONMENTS[2]
+SELECTED_ENV = ENVIRONMENTS[0]
 
 # --- Main Execution ---
 if __name__ == "__main__":
