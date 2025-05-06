@@ -26,7 +26,7 @@ CARTPOLE_CONFIG = {
 
     'NUM_STEPS': 20000, # Total number of steps to train the agent
     'EVAL_EPISODES': 0, # Average over this many episodes for evaluation
-    'TEST_EPISODES': 25, # Number of episodes to test the agent after training
+    'TEST_EPISODES': 100, # Number of episodes to test the agent after training
 
     'RENDER': RENDER,
     'DEVICE': DEVICE,

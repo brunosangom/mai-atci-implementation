@@ -92,6 +92,69 @@ def generate_renders(env_name, agent, num_renders, save_dir, device, is_continuo
 
     print("Video Renders generated.\n")
 
+def record_final_evaluation(agent_id, cfg, agent, results_dir_base="results"):
+    """
+    Performs final evaluation, generates renders, and logs results to a CSV file.
+    """
+    print(f"\n--- Final Evaluation and Recording for {agent_id} ---")
+    device = cfg['DEVICE']
+    is_continuous = cfg['is_continuous']
+
+    # 1. Perform final evaluation
+    final_avg_reward = evaluate_agent(
+        cfg['ENV_NAME'],
+        agent,
+        cfg['TEST_EPISODES'],
+        device,
+        is_continuous
+    )
+    print(f"Final Evaluation: Average Reward over {cfg['TEST_EPISODES']} episodes = {final_avg_reward:.2f}")
+
+    # 2. Generate renders if requested
+    if cfg.get('RENDER', False):
+        results_dir_current_run = os.path.join(results_dir_base, agent_id)
+        render_save_dir = os.path.join(results_dir_current_run, "renders", "final")
+        print(f"Generating final evaluation renders in {render_save_dir}...")
+        generate_renders(
+            cfg['ENV_NAME'],
+            agent,
+            num_renders=3,
+            save_dir=render_save_dir,
+            device=device,
+            is_continuous=is_continuous
+        )
+    else:
+        print("Skipping final evaluation rendering as per configuration.")
+
+    # 3. Prepare data for CSV
+    excluded_keys_for_csv = ['ENV_NAME', 'GOAL_REWARD', 'RENDER', 'DEVICE']
+    
+    csv_row_data = {'agent_id': agent_id, 'final_average_reward': final_avg_reward}
+
+    for key, value in cfg.items():
+        if key not in excluded_keys_for_csv:
+            if isinstance(value, (list, dict)): # Serialize complex types to JSON string
+                csv_row_data[key] = json.dumps(value)
+            else:
+                csv_row_data[key] = value
+    
+    # 4. Append to evaluation_results.csv
+    csv_path = os.path.join(results_dir_base, "evaluation_results.csv")
+    print(f"Logging final results to {csv_path}")
+
+    try:
+        new_data_df = pd.DataFrame([csv_row_data])
+        if os.path.exists(csv_path):
+            results_df = pd.read_csv(csv_path)
+            results_df = pd.concat([results_df, new_data_df], ignore_index=True)
+        else:
+            results_df = new_data_df
+        
+        results_df.to_csv(csv_path, index=False)
+        print(f"Successfully logged final results to {csv_path}")
+    except Exception as e:
+        print(f"Error saving final evaluation results to CSV: {e}")
+
 def train_agent(cfg):
     """Trains the PPO agent using parallel environments."""
     print(f"Using device: {cfg['DEVICE']}")
@@ -136,26 +199,25 @@ def train_agent(cfg):
 
     # Create directories for saving models
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    model_dir = os.path.join("ppo_models", f"ppo_{cfg['ENV_NAME']}_{timestamp}")
+    agent_id_str = f"ppo_{cfg['ENV_NAME']}_{timestamp}"
+    model_dir = os.path.join("ppo_models", agent_id_str)
     os.makedirs(model_dir, exist_ok=True)
     print(f"Models and config will be saved in: {model_dir}")
 
     # Create results directory for this run
-    results_dir = os.path.join("results", f"ppo_{cfg['ENV_NAME']}_{timestamp}")
+    results_dir = os.path.join("results", agent_id_str)
     os.makedirs(results_dir, exist_ok=True)
     print(f"Evaluation results, plots and renders will be saved in: {results_dir}")
 
     # Save the configuration dictionary as a JSON file
     config_path_1 = os.path.join(model_dir, "config.json")
     config_path_2 = os.path.join(results_dir, "config.json")
+    cfg_to_save = cfg.copy() # This will be passed to record_final_evaluation
     try:
         # Add action space info to config before saving
-        cfg_to_save = cfg.copy()
         cfg_to_save['is_continuous'] = is_continuous
         cfg_to_save['action_dim'] = int(action_dim)
-        if is_continuous:
-            cfg_to_save['action_low'] = action_low.tolist() # Convert numpy arrays for JSON
-            cfg_to_save['action_high'] = action_high.tolist()
+        cfg_to_save['state_dim'] = state_dim
 
         with open(config_path_1, 'w') as f:
             json.dump(cfg_to_save, f, indent=4)
@@ -249,7 +311,7 @@ def train_agent(cfg):
             # Save the model if it's the best so far
             if avg_eval_reward > best_eval_reward and (total_steps >= cfg['NUM_STEPS'] * 0.1 or avg_eval_reward >= cfg['GOAL_REWARD']):
                 best_eval_reward = avg_eval_reward
-                save_path = os.path.join(model_dir, f"ppo_{cfg['ENV_NAME']}_{timestamp}.pth")
+                save_path = os.path.join(model_dir, f"{agent_id_str}.pth")
                 agent.save_model(save_path)
 
                 # Generate renders if requested
@@ -353,29 +415,30 @@ def train_agent(cfg):
     except Exception as e:
         print(f"Error calling save_loss_logs: {e}")
 
-    # Load the best model for final evaluation
-    best_model_path = os.path.join(model_dir, f"ppo_{cfg['ENV_NAME']}_{timestamp}.pth")
-    if os.path.exists(best_model_path):
-        print(f"Loading best model for final evaluation.")
+    # --- Final Recording using the new function ---
+    final_model_path = os.path.join(model_dir, f"{agent_id_str}.pth")
 
-        best_agent = PPOAgent(state_dim, action_dim, cfg, is_continuous=is_continuous)
-        best_agent.load_model(best_model_path)
-        # Evaluate using the single-env evaluator
-        final_avg_reward = evaluate_agent(cfg['ENV_NAME'], best_agent, cfg['TEST_EPISODES'], cfg['DEVICE'], is_continuous)
-        print(f"Final Evaluation (Best Model): Average Reward over {cfg['TEST_EPISODES']} episodes = {final_avg_reward:.2f}")
+    # Ensure a model is saved at final_model_path.
+    # If best_eval_reward condition saved a model, it's already there.
+    # Otherwise, save the current agent's state.
+    if not os.path.exists(final_model_path):
+        print(f"No 'best' model was saved during training. Saving current agent state.")
+        agent.save_model(final_model_path)
 
-    else:
-        save_path = os.path.join(model_dir, f"ppo_{cfg['ENV_NAME']}_{timestamp}.pth")
-        agent.save_model(save_path)
-        print("No best model was saved during training. Evaluating current agent state.")
-        # Generate renders if requested
-        if cfg['RENDER']:
-            render_save_dir = os.path.join(results_dir, "renders", "final")
-            generate_renders(cfg['ENV_NAME'], agent, 3, render_save_dir, cfg['DEVICE'], is_continuous)
-        # Evaluate the final state of the training agent using the single-env evaluator
-        final_avg_reward = evaluate_agent(cfg['ENV_NAME'], agent, cfg['TEST_EPISODES'], cfg['DEVICE'], is_continuous)
-        print(f"Final Evaluation (Current Agent): Average Reward = {final_avg_reward:.2f}")
+    # Create a new agent instance for loading the saved model to ensure clean state if needed
+    final_agent = PPOAgent(state_dim, action_dim, cfg, is_continuous=is_continuous)
+    try:
+        final_agent.load_model(final_model_path)
+    except Exception as e:
+        print(f"Error loading model from {final_model_path}: {e}. Using agent from memory for evaluation.")
+        final_agent = agent # Fallback
 
+    # Call the new function for final evaluation, rendering, and CSV logging
+    record_final_evaluation(
+        agent_id=agent_id_str,
+        cfg=cfg_to_save,
+        agent=final_agent
+    )
 
     envs.close()
 
