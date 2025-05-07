@@ -3,8 +3,8 @@
 ## Source Code
 
 The `src` directory contains the source code for this project.
-To run the code, navigate to the root directory of the project in your terminal and execute the following command:
-
+To run the code, navigate to the root directory of the project in your terminal, create a virtual environment, install the requirements (`requirements.txt`) and execute the following command:
+ 
 ```bash
 python -m src.main
 ```
