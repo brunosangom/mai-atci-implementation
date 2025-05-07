@@ -1,0 +1,48 @@
+\section{Methodology}\label{sec:methodology}
+\subsection{Algorithm}
+The core of this project is the implementation of the Proximal Policy Optimization (PPO) algorithm~\cite{schulman2017proximal}. PPO is an on-policy, actor-critic reinforcement learning algorithm designed for its stability and sample efficiency. It optimizes a ``clipped'' surrogate objective function to prevent excessively large policy updates, which can lead to performance collapse. Our implementation incorporates several key features:
+
+\begin{itemize}
+    \item \textbf{Actor-Critic Architecture:} The agent employs an actor-critic model, as defined in \texttt{src/models.py}. This architecture consists of two main components: an actor that learns the policy (mapping states to actions) and a critic that learns the value function (estimating the expected return from a given state). The implementation supports both separate networks for the actor and critic, as well as a shared feature layer followed by separate heads. The neural networks primarily use Tanh activation functions in their hidden layers. Observation normalization is applied to the input states using a running mean and standard deviation filter (\texttt{RunningMeanStd} in \texttt{src/models.py}) to stabilize training, especially in environments with varying state scales. The final layers of the actor and critic networks are initialized using a method similar to ``normc'' initialization, as implemented in the original PPO code~\cite{PPOcode}.
+
+    \item \textbf{Clipped Surrogate Objective:} PPO's hallmark is its clipped surrogate objective function. This objective limits the change in the policy at each update step by clipping the probability ratio between the new and old policies. The clipping range is determined by a hyperparameter $\epsilon$ (referred to as \texttt{PPO\_EPSILON} in \texttt{src/config.py}). This mechanism helps to ensure more stable and reliable training by preventing destructive large updates. The specific implementation of this objective can be found in the \texttt{update} method within \texttt{src/ppo.py}.
+
+    \item \textbf{Generalized Advantage Estimation (GAE):} To estimate the advantage function $A(s,a) = Q(s,a) - V(s)$, our implementation uses Generalized Advantage Estimation (GAE)~\cite{schulman2015high}. GAE provides a an effective trade-off between bias and variance in the advantage estimates by using an exponentially-weighted average of multi-step TD errors. The calculation is performed in the \texttt{\_calculate\_gae} method of the \texttt{PPOMemory} class (see \texttt{src/memory.py}), using hyperparameters $\gamma$ (\texttt{GAMMA}) for discounting future rewards and $\lambda$ (\texttt{GAE\_LAMBDA}) for controlling the GAE trade-off. The advantages can optionally be normalized (\texttt{NORMALIZE\_ADVANTAGES} in \texttt{src/config.py}) before being used in the policy update.
+
+    \item \textbf{Multiple Epochs and Minibatch Updates:} For each batch of collected experience (transitions from multiple actors over \texttt{PPO\_STEPS}), the PPO algorithm performs multiple epochs of updates (\texttt{PPO\_EPOCHS}) using randomly sampled minibatches (\texttt{MINI\_BATCH\_SIZE}). This allows for better sample utilization and more stable learning. This process is managed within the \texttt{update} method of the \texttt{PPOAlgorithm} class in \texttt{src/ppo.py}.
+
+    \item \textbf{Entropy Bonus:} To encourage exploration and prevent premature convergence to suboptimal policies, an optional entropy bonus can be added to the loss function. This bonus is scaled by a hyperparameter $\beta_{entropy}$ (\texttt{ENTROPY\_BETA} in \texttt{src/config.py}).
+
+    \item \textbf{Optimization:} The actor and critic networks are optimized using the Adam optimizer~\cite{kingma2014adam} with a configurable learning rate (\texttt{LEARNING\_RATE}).
+\end{itemize}
+
+\subsection{Environments}
+All environments used in this project are sourced from the Gymnasium library~\cite{gymnasium2023}, the successor to OpenAI Gym. For continuous control tasks, the \texttt{ClipAction} wrapper from Gymnasium is utilized to ensure that actions selected by the agent remain within the valid bounds defined by the environment's action space, as seen in \texttt{src/train.py}.
+
+\begin{itemize}
+    \item \textbf{CartPole-v1:}
+    \begin{itemize}
+        \item \textit{Description:} This is a classic reinforcement learning problem where the goal is to balance a pole upright on a cart that moves along a frictionless track.
+        \item \textit{State Space:} Continuous, 4-dimensional, representing the cart's position and velocity, and the pole's angle and angular velocity.
+        \item \textit{Action Space:} Discrete, with 2 actions: push the cart to the left or to the right.
+        \item \textit{Purpose:} Due to its simplicity and fast training times, CartPole-v1 serves as an initial benchmark to verify the correctness and basic functionality of the PPO implementation.
+    \end{itemize}
+
+    \item \textbf{MuJoCo Environments (via Gymnasium-Robotics):} These environments utilize the MuJoCo physics engine~\cite{todorov2012mujoco} and represent more challenging continuous control tasks.
+    \begin{itemize}
+        \item \textbf{HalfCheetah-v5:}
+        \begin{itemize}
+            \item \textit{Description:} This environment features a 2D simulated cheetah robot. The objective is to make the cheetah run forward as fast as possible.
+            \item \textit{State Space:} Continuous, 17-dimensional, including joint positions, joint velocities, and other physical properties of the cheetah's body parts.
+            \item \textit{Action Space:} Continuous, 6-dimensional, representing the torque applied to each of the cheetah's six actuated joints.
+            \item \textit{Purpose:} This is a standard benchmark for continuous control algorithms. The results obtained on HalfCheetah-v5 are compared with those reported in the original PPO paper to gauge the performance of our implementation.
+        \end{itemize}
+        \item \textbf{Reacher-v5:}
+        \begin{itemize}
+            \item \textit{Description:} In this environment, a two-jointed robotic arm must reach a randomly positioned target in its workspace.
+            \item \textit{State Space:} Continuous, 11-dimensional, typically including the cosine and sine of joint angles, joint angular velocities, and the Cartesian coordinates of the target.
+            \item \textit{Action Space:} Continuous, 2-dimensional, representing the torques applied to the two joints of the arm.
+            \item \textit{Purpose:} Similar to HalfCheetah, Reacher-v5 is another common benchmark for continuous control. It allows for further evaluation of the PPO implementation's capabilities on tasks requiring precise motor control, and results are also compared against the PPO paper.
+        \end{itemize}
+    \end{itemize}
+\end{itemize}
